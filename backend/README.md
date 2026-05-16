@@ -1,10 +1,11 @@
 # Tutor Backend
 
-FastAPI service that powers the Tutor Chrome extension. It accepts a web page's
-extracted text, chunks and embeds it, and serves four teaching modes
-(**Teach me**, **Summarise**, **Quiz me**, **Explain simply**) plus a
-free-chat WebSocket — all grounded in the page content. The frontend renders
-the responses next to a Beyond Presence avatar and a synced slide deck.
+FastAPI service that powers the Tutor Chrome extension. It accepts a web
+page's extracted text, chunks and embeds it, and serves four teaching modes
+(**Teach me**, **Summarise**, **Quiz me**, **Explain simply**), free-form
+**chat**, and **flashcard** generation — all grounded in the page content
+and all over plain HTTP. The frontend renders the responses next to a
+Beyond Presence avatar and a synced slide deck.
 
 The product-wide plan lives in [`../.cursor/plans/interactive-wiki-tutor_1e075354.plan.md`](../.cursor/plans/interactive-wiki-tutor_1e075354.plan.md).
 This file is the backend-only build journal.
@@ -46,8 +47,8 @@ don't move to the next step until the current one passes.
 | 6  | `POST /session`            | done   |
 | 7  | Chunking + RAG             | done   |
 | 8  | `POST /mode`               | done   |
-| 9  | `POST /chat`               | next   |
-| 10 | `POST /flashcards`         | todo   |
+| 9  | `POST /chat`               | done   |
+| 10 | `POST /flashcards`         | done   |
 
 ### 1. Tooling and venv — done
 
@@ -314,11 +315,11 @@ reveals.
 - 404 fires for unknown `session_id`; 422 fires for unknown `mode` or
   `lang` literals (with helpful pydantic error message).
 
-### 9. `POST /chat`
+### 9. `POST /chat` — done
 
-Body: `{session_id, text}`. Returns `{reply, highlight_anchor_ids}` in a single
-HTTP response — there is no streaming protocol on the wire. The avatar's TTS
-provides the perceived stream.
+Body: `{session_id, text}`. Returns `{reply, highlight_anchor_ids}` in a
+single HTTP response — there is no streaming protocol on the wire. The
+avatar's TTS provides the perceived stream.
 
 ```json
 // request
@@ -326,24 +327,154 @@ provides the perceived stream.
 
 // response
 {
-  "reply": "Chlorophyll is the green pigment...",
-  "highlight_anchor_ids": ["b2"]
+  "reply": "Chlorophyll is the green pigment in plant cells that absorbs light, mainly in the blue and red wavelengths. It plays a crucial role in photosynthesis by helping convert light energy into chemical energy stored in glucose.",
+  "highlight_anchor_ids": ["b1", "b2", "b3"]
 }
 ```
 
-Pipeline: embed the user text → cosine-rank against the session's chunks →
-take top-4 → stuff into the system prompt → call OpenAI → return reply plus
-the anchor IDs of the chunks that grounded the answer.
+**Pieces added**
 
-**Done when** `curl -X POST localhost:8000/chat -d '{"session_id":"...","text":"what is X?"}'`
-returns a JSON body with both `reply` and `highlight_anchor_ids` populated.
+- **`tutor/agent.py`**:
+  - `_CHAT_SYSTEM_PROMPT` — instructs the model to ground strictly in the
+    SOURCE CHUNKS, refuse when absent, and keep the reply conversational
+    (1-3 sentences, ~60 words max, no markdown) so the avatar can speak
+    it cleanly via TTS.
+  - `answer_question(session, text) -> tuple[str, list[str]]` — calls
+    `retrieve(k=4)` from `tutor/rag.py`, packs the retrieved chunks as
+    labelled context (`[blocks b4,b5,b6]\n<chunk text>`), asks
+    `gpt-4o-mini` for a short reply (`max_tokens=150`, `temperature=0.4`),
+    and computes the **ordered union of block_ids** across the retrieved
+    chunks deterministically. The LLM does NOT pick anchors — the chunks
+    are by definition what grounded the answer, so highlighting their
+    blocks is correct by construction and frees the LLM from a second
+    job.
+- **`main.py`**:
+  - `@app.post("/chat", response_model=ChatResponse)` — 400 on empty /
+    whitespace `text`, 404 on missing `session_id`, 500 on missing API
+    key. The route is intentionally simple; all the work is in
+    `answer_question`.
 
-### 10. `POST /flashcards`
+**Refusal behaviour**
 
-Body: `{session_id, n=8}`. Returns `[{q, a, source_chunk_id}]` generated from
-the session content.
+When the user asks something outside the page's content, the model
+returns the literal phrase suggested in the system prompt:
 
-**Done when** the response is a clean JSON list of cards.
+```
+Q: who won the 2026 Eurovision?
+A: I can only help with what's on this page.
+```
+
+This is a soft refusal driven by the prompt; we don't enforce it in
+code (no similarity-threshold gate). Acceptable for MVP — gpt-4o-mini
+follows the instruction reliably.
+
+**No `lang` field**
+
+`ChatRequest` is just `{session_id, text}`. Phase 1 chat is English-only
+because that's what the avatar speaks. Adding `lang` later is a
+non-breaking pydantic extension when needed.
+
+**Anchor scope on small pages**
+
+On the photosynthesis test page (8 blocks → 3 chunks), `k=4` retrieves
+all chunks and the anchor union covers `b1`-`b8`. On a real Wikipedia
+article (30+ chunks) retrieval picks a much tighter set, so this
+broadening is purely a small-corpus artefact, not a contract issue.
+
+**Done when** ✓ confirmed:
+
+- Three on-topic queries (chlorophyll, Calvin cycle, CAM plants) return
+  sensible 1-3-sentence replies in 1-3s each, every reply has non-empty
+  `highlight_anchor_ids`.
+- Off-topic refusal probe (Eurovision) returns "I can only help with
+  what's on this page." instead of hallucinating.
+- 404 on bad `session_id`, 400 on empty `text`, 422 on missing `text`.
+
+### 10. `POST /flashcards` — done
+
+Body: `{session_id, n=8}` (`n` defaults to 8 via pydantic, capped at 1..20
+in the route). Returns a top-level JSON array of `n` flashcards generated
+from the page:
+
+```json
+[
+  {
+    "q": "What is photosynthesis and why is it important for life on Earth?",
+    "a": "Photosynthesis is a biological process used by plants, algae, and some bacteria to convert light energy into chemical energy stored in glucose. It is the primary source of energy for nearly all life on Earth.",
+    "source_chunk_id": "b1"
+  },
+  ...
+]
+```
+
+**Pieces added**
+
+- **`tutor/agent.py`**:
+  - `_FLASHCARDS_SYSTEM_PROMPT` — instructs the model to produce exactly
+    `{n}` cards, spread them across blocks rather than clustering on one
+    section, and copy `source_chunk_id` verbatim from the bracketed
+    block-ID prefix of the source blocks.
+  - `_FLASHCARDS_JSON_SCHEMA` — strict OpenAI JSON schema. OpenAI's strict
+    mode requires an **object root**, but our wire shape is a top-level
+    array, so we ask the LLM for `{ "cards": [Flashcard, ...] }` and
+    unwrap server-side. The HTTP response stays a plain JSON array per
+    the contract in the root README.
+  - `build_flashcards(session, n) -> list[Flashcard]` — packs every
+    `session.blocks` entry as `[b3] <text>` labelled context, calls
+    `gpt-4o-mini` with strict JSON schema response format
+    (`temperature=0.4`), `json.loads` the content, and validates each
+    card via `Flashcard.model_validate`.
+- **`main.py`**:
+  - `@app.post("/flashcards", response_model=list[Flashcard])` — 400 if
+    `n` is outside `1..20` (a soft cap that keeps token cost predictable;
+    raise later if needed), 404 on missing `session_id`, 409 on the
+    defensive chunkless-session case, 500 on `RuntimeError` (missing API
+    key).
+
+**Why blocks instead of chunks**
+
+Like `/mode`, flashcards must cover the **whole** page (not RAG retrieval),
+so we feed every paragraph in. Empirically, labelling per-chunk
+("`Chunk c1 (from blocks b1,b2,b3)`") leaks the `c*` ID into the response
+because the LLM picks the first identifier it sees. Iterating
+`session.blocks` directly and labelling each line as `[b1] <text>`,
+`[b2] <text>`, ... gives the model unambiguous `b*`-only context. Coverage
+is identical to "all chunks" since chunks are just groups of consecutive
+blocks.
+
+**`source_chunk_id` is actually a block ID**
+
+The field name predates the chunk-vs-block split. Per the contract in the
+root README and `frontend/CONCEPTS.md`, **the frontend never sees `c*`
+IDs**. `source_chunk_id` carries the single most relevant `b*` ID — the
+paragraph a learner should re-read to verify the answer — so the side
+panel can offer a "see source" highlight that reuses the same anchor flow
+as `/mode` and `/chat`.
+
+**Done when** ✓ confirmed on the photosynthesis test page (8 blocks):
+
+- `n: 5` → exactly 5 cards spanning 5 distinct blocks (e.g.
+  `b1, b2, b3, b4, b7`), every `source_chunk_id` is a real `b*` ID.
+- `n: 10` → exactly 10 cards covering all 8 blocks, with a couple of
+  near-duplicate concepts re-using the same anchor.
+- `n` omitted → 8 cards (pydantic default), one per block.
+- `n: 0` and `n: 99` → 400 `{"detail":"n must be between 1 and 20"}`.
+- Bad `session_id` → 404 `{"detail":"session_id not found"}`.
+
+Latency is ~5-10s for `n=8`, similar to `/mode` since both are large
+structured outputs.
+
+## Done
+
+Backend playbook is **10/10**. The full feature surface — `/health`,
+`/test/openai`, `/session`, `/mode`, `/chat`, `/flashcards` — is now
+exercisable end-to-end in Swagger UI alone, no frontend required. Next
+phase is the Chrome extension: see [`../frontend/README.md`](../frontend/README.md)
+and [`../frontend/CONCEPTS.md`](../frontend/CONCEPTS.md) for the spec.
+
+The temporary `GET /test/openai` route can be deleted any time now — it
+served its purpose during Steps 3-4 and is no longer needed for
+diagnostics.
 
 ## Out of scope (handled later)
 
@@ -353,7 +484,7 @@ the session content.
 - Persistent storage. Sessions are in-memory only and cleared when the server
   restarts.
 
-## Layout (target, not all yet present)
+## Layout
 
 ```
 backend/
@@ -364,8 +495,9 @@ backend/
 └── tutor/
     ├── __init__.py
     ├── llm.py           # OpenAI client wrapper
-    ├── models.py        # pydantic schemas
+    ├── models.py        # pydantic schemas (request/response shapes)
     ├── store.py         # in-memory Session store
     ├── rag.py           # Chunk, chunk_blocks, embed_texts, retrieve
-    └── agent.py         # summarise_page (Step 6) + mode prompts (Step 8)
+    └── agent.py         # summarise_page + build_deck + answer_question
+                         #   + build_flashcards (and their prompts/schemas)
 ```
