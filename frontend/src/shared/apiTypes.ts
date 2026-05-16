@@ -67,3 +67,29 @@ export type Flashcard = {
 export type HealthResponse = {
   ok: boolean;
 };
+
+/** GET /api/avatars */
+export type AvatarListItem = {
+  id: string;
+  label: string;
+};
+
+export type AvatarListResponse = {
+  default_id: string;
+  avatars: AvatarListItem[];
+};
+
+/** POST /api/create-call — Beyond Presence + LiveKit (avatar.py) */
+export type CreateCallRequest = {
+  deck: Deck;
+  name?: string;
+  /** Catalog id from GET /api/avatars */
+  avatar_id?: string;
+};
+
+export type CreateCallResponse = {
+  call_id: string;
+  livekit_url: string;
+  livekit_token: string;
+  agent_id?: string | null;
+};

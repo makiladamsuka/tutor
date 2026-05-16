@@ -1,8 +1,11 @@
 /** Backend HTTP client (Step 5). */
 
 import type {
+  AvatarListResponse,
   ChatRequest,
   ChatResponse,
+  CreateCallRequest,
+  CreateCallResponse,
   Deck,
   Flashcard,
   FlashcardRequest,
@@ -11,6 +14,8 @@ import type {
   SessionRequest,
   SessionResponse,
 } from "./apiTypes";
+
+export type { CreateCallResponse } from "./apiTypes";
 
 export const API_BASE = "http://localhost:8000";
 
@@ -34,8 +39,14 @@ function formatApiError(status: number, body: unknown): string {
   return `${status}: request failed`;
 }
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = `${API_BASE}${path}`;
+const API_BASE_FALLBACK = "http://127.0.0.1:8000";
+
+async function apiFetchOnce<T>(
+  base: string,
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const url = `${base}${path}`;
   const response = await fetch(url, {
     ...init,
     headers: {
@@ -57,6 +68,18 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return data as T;
+}
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  try {
+    return await apiFetchOnce<T>(API_BASE, path, init);
+  } catch (primaryErr) {
+    try {
+      return await apiFetchOnce<T>(API_BASE_FALLBACK, path, init);
+    } catch {
+      throw primaryErr;
+    }
+  }
 }
 
 export function getHealth(): Promise<HealthResponse> {
@@ -88,6 +111,17 @@ export function postFlashcards(
   body: FlashcardRequest,
 ): Promise<Flashcard[]> {
   return apiFetch<Flashcard[]>("/flashcards", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getAvatars(): Promise<AvatarListResponse> {
+  return apiFetch<AvatarListResponse>("/api/avatars");
+}
+
+export function createCall(body: CreateCallRequest): Promise<CreateCallResponse> {
+  return apiFetch<CreateCallResponse>("/api/create-call", {
     method: "POST",
     body: JSON.stringify(body),
   });

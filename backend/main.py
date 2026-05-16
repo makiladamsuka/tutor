@@ -18,6 +18,7 @@ from tutor.models import (
     SessionResponse,
 )
 from tutor.rag import chunk_blocks, embed_texts
+from tutor.avatar import router as avatar_router
 from tutor.store import (
     Session,
     get,
@@ -31,6 +32,7 @@ from tutor.store import (
 load_dotenv()
 
 app = FastAPI(title="Tutor Backend")
+app.include_router(avatar_router)
 
 # Allow the Chrome extension (any extension ID) and local dev frontends.
 # Using a regex so we don't have to hardcode the extension ID, which

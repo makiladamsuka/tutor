@@ -14,6 +14,8 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from tutor.avatar_config import AvatarCatalog, load_avatar_catalog, resolve_agent_id
+
 BEY_API_BASE = os.environ.get("BEY_API_BASE", "https://api.bey.dev")
 
 
@@ -21,11 +23,7 @@ def _bey_api_key() -> str:
     return os.environ.get("BEY_API_KEY", "")
 
 
-def _bey_agent_id() -> str:
-    return os.environ.get("BEY_AGENT_ID") or os.environ.get("BEY_AVATAR_ID", "")
-
-
-_avatar_id_cache: Optional[str] = None
+_avatar_id_cache: dict[str, str] = {}
 
 
 class NarrationSegment(BaseModel):
@@ -40,6 +38,20 @@ class NarrationDeck(BaseModel):
 class CreateCallRequest(BaseModel):
     deck: Optional[NarrationDeck] = None
     name: str = Field(default="Tutor")
+    avatar_id: Optional[str] = Field(
+        default=None,
+        description="Catalog id from GET /api/avatars (not the Bey visual avatar_id).",
+    )
+
+
+class AvatarListItem(BaseModel):
+    id: str
+    label: str
+
+
+class AvatarListResponse(BaseModel):
+    default_id: str
+    avatars: list[AvatarListItem]
 
 
 class CreateCallResponse(BaseModel):
@@ -59,17 +71,28 @@ def _bey_headers(api_key: str) -> dict[str, str]:
     }
 
 
-async def _get_template_avatar_id(client: httpx.AsyncClient, api_key: str) -> str:
-    global _avatar_id_cache
-    if _avatar_id_cache:
-        return _avatar_id_cache
+def _catalog_for_api() -> AvatarCatalog:
+    try:
+        return load_avatar_catalog()
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    template_agent_id = _bey_agent_id()
-    if not template_agent_id:
-        raise HTTPException(
-            status_code=500,
-            detail="BEY_AGENT_ID is not set on the server.",
-        )
+
+def _resolve_template_agent_id(avatar_key: Optional[str]) -> str:
+    try:
+        _, agent_id = resolve_agent_id(avatar_key)
+        return agent_id
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+async def _get_template_avatar_id(
+    client: httpx.AsyncClient,
+    api_key: str,
+    template_agent_id: str,
+) -> str:
+    if template_agent_id in _avatar_id_cache:
+        return _avatar_id_cache[template_agent_id]
 
     resp = await client.get(
         f"{BEY_API_BASE}/v1/agents/{template_agent_id}",
@@ -80,14 +103,14 @@ async def _get_template_avatar_id(client: httpx.AsyncClient, api_key: str) -> st
             status_code=resp.status_code,
             detail=f"Beyond Presence get-agent failed: {resp.text}",
         )
-    avatar_id = resp.json().get("avatar_id")
-    if not avatar_id:
+    bey_avatar_id = resp.json().get("avatar_id")
+    if not bey_avatar_id:
         raise HTTPException(
             status_code=502,
             detail="Beyond Presence get-agent response missing avatar_id.",
         )
-    _avatar_id_cache = avatar_id
-    return avatar_id
+    _avatar_id_cache[template_agent_id] = bey_avatar_id
+    return bey_avatar_id
 
 
 _NARRATOR_SYSTEM_PROMPT = """You are a tutor narrating a slideshow. The lesson \
@@ -136,6 +159,7 @@ async def _create_disposable_agent(
     api_key: str,
     name: str,
     deck: NarrationDeck,
+    template_agent_id: str,
 ) -> str:
     if not deck.segments:
         raise HTTPException(
@@ -143,7 +167,7 @@ async def _create_disposable_agent(
             detail="deck.segments must contain at least one segment.",
         )
 
-    avatar_id = await _get_template_avatar_id(client, api_key)
+    avatar_id = await _get_template_avatar_id(client, api_key, template_agent_id)
     system_prompt = _build_narrator_system_prompt(deck)[:_BEY_SYSTEM_PROMPT_MAX]
     greeting = deck.segments[0].say[:_BEY_GREETING_MAX]
 
@@ -165,6 +189,21 @@ async def _create_disposable_agent(
     return resp.json()["id"]
 
 
+@router.get("/api/avatars", response_model=AvatarListResponse)
+def list_avatars() -> AvatarListResponse:
+    catalog = _catalog_for_api()
+    configured = [a for a in catalog.avatars if a.agent_id]
+    if not configured:
+        raise HTTPException(
+            status_code=500,
+            detail="No avatars configured. Set BEY_AGENT_ID or BEY_AVATARS in backend/.env",
+        )
+    return AvatarListResponse(
+        default_id=catalog.default_id,
+        avatars=[AvatarListItem(id=a.id, label=a.label) for a in configured],
+    )
+
+
 @router.post("/api/create-call", response_model=CreateCallResponse)
 async def create_call(payload: CreateCallRequest | None = None) -> CreateCallResponse:
     api_key = _bey_api_key()
@@ -172,20 +211,20 @@ async def create_call(payload: CreateCallRequest | None = None) -> CreateCallRes
         raise HTTPException(status_code=500, detail="BEY_API_KEY is not set on the server.")
 
     payload = payload or CreateCallRequest()
+    template_agent_id = _resolve_template_agent_id(payload.avatar_id)
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             if payload.deck is not None:
                 agent_id = await _create_disposable_agent(
-                    client, api_key, payload.name, payload.deck
+                    client,
+                    api_key,
+                    payload.name,
+                    payload.deck,
+                    template_agent_id,
                 )
             else:
-                agent_id = _bey_agent_id()
-                if not agent_id:
-                    raise HTTPException(
-                        status_code=500,
-                        detail="BEY_AGENT_ID is not set on the server.",
-                    )
+                agent_id = template_agent_id
 
             resp = await client.post(
                 f"{BEY_API_BASE}/v1/calls",

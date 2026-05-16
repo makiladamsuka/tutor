@@ -6,7 +6,11 @@ export default defineManifest({
   version: "1.0.0",
   description: "Beyond Presence AI Tutor Extension",
   permissions: ["sidePanel", "activeTab", "scripting", "tabs"],
-  host_permissions: ["<all_urls>"],
+  host_permissions: [
+    "<all_urls>",
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*",
+  ],
   side_panel: {
     default_path: "src/sidepanel/index.html",
   },

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getHealth, postMode, postSession } from "../shared/api";
 import type { Deck, Mode, SessionRequest } from "../shared/apiTypes";
+import AvatarPanel from "./AvatarPanel";
 import DeckPlayer from "./DeckPlayer";
 import {
   pauseAvatar,
@@ -86,6 +87,7 @@ export default function App() {
   const [deck, setDeck] = useState<Deck | null>(null);
   const [loadingMode, setLoadingMode] = useState<Mode | null>(null);
   const [modeError, setModeError] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [segmentIndex, setSegmentIndex] = useState(0);
   const [playbackState, setPlaybackState] =
     useState<PlaybackState>("speaking");
@@ -94,6 +96,7 @@ export default function App() {
     setDeck(null);
     setActiveMode(null);
     setModeError(null);
+    setAvatarError(null);
     setLoadingMode(null);
     setSegmentIndex(0);
     setPlaybackState("speaking");
@@ -280,6 +283,18 @@ export default function App() {
     speakSegment(segment);
   }
 
+  function handleDeckAutoAdvance() {
+    if (!deck || deck.segments.length === 0) {
+      return;
+    }
+    const idx = clampedSegmentIndex(deck);
+    if (idx >= deck.segments.length - 1) {
+      return;
+    }
+    setSegmentIndex(idx + 1);
+    setPlaybackState("speaking");
+  }
+
   async function handleMode(mode: Mode) {
     if (!sessionId) {
       return;
@@ -446,6 +461,18 @@ export default function App() {
             {modeError}
           </p>
         )}
+        {avatarError && (
+          <p className="panel-status panel-status--err panel-status--pre">
+            {avatarError}
+          </p>
+        )}
+        <AvatarPanel
+          deck={deck}
+          segmentIndex={safeSegmentIndex}
+          playbackState={playbackState}
+          onAutoAdvance={handleDeckAutoAdvance}
+          onError={setAvatarError}
+        />
         {deck && activeMode && deckSegmentCount > 0 && (
           <DeckPlayer
             deck={deck}
