@@ -44,9 +44,9 @@ don't move to the next step until the current one passes.
 | 4  | CORS for the extension     | done   |
 | 5  | Project layout (`tutor/`)  | done   |
 | 6  | `POST /session`            | done   |
-| 7  | Chunking + RAG             | next   |
-| 8  | `POST /mode`               | todo   |
-| 9  | `POST /chat`               | todo   |
+| 7  | Chunking + RAG             | done   |
+| 8  | `POST /mode`               | done   |
+| 9  | `POST /chat`               | next   |
 | 10 | `POST /flashcards`         | todo   |
 
 ### 1. Tooling and venv — done
@@ -171,12 +171,12 @@ script knows which paragraphs to highlight.
 **Pieces added**
 
 - **`tutor/store.py`** — `Session` dataclass + `_sessions: dict[str, Session]`
-  + `put()` / `get()`. Pure in-memory; restart wipes everything. Fields for
-  `chunks` and `embeddings` will be added in Step 7.
+  + `put()` / `get()`. Pure in-memory; restart wipes everything. (Extended
+  in Step 7 with `chunks` and `embeddings`.)
 - **`tutor/agent.py`** — `summarise_page(title, blocks) -> str`. Sends only
   the first 2000 chars of joined block text to `gpt-4o-mini` so this stays a
-  small, fast call (max 60 tokens, temperature 0.3). Step 8 will grow this
-  file with the four mode prompts.
+  small, fast call (max 60 tokens, temperature 0.3). (Extended in Step 8
+  with the four mode prompts and `build_deck`.)
 - **`main.py`** — `@app.post("/session", response_model=SessionResponse)`.
   Validates `blocks` is non-empty (400), generates `uuid4().hex`, calls
   `summarise_page()`, stores the `Session`, returns the response. The
@@ -190,19 +190,54 @@ script knows which paragraphs to highlight.
 - Empty `blocks` → 400 `{"detail":"blocks must contain at least one item"}`.
 - Missing required field → 422 from pydantic.
 
-### 7. Chunking + RAG (`tutor/rag.py`)
-
-- `chunk(text, target_tokens=500)` using `tiktoken`
-- `embed(texts) -> np.ndarray` with `text-embedding-3-small`
-- `retrieve(session_id, query, k=4)` using numpy cosine similarity
+### 7. Chunking + RAG — done
 
 ```bash
 uv add tiktoken numpy
 ```
 
-**Done when** a script over a long article returns relevant chunks for a query.
+`tutor/rag.py` exposes three functions plus a `Chunk` dataclass:
 
-### 8. `POST /mode`
+- **`chunk_blocks(blocks, target_tokens=500) -> list[Chunk]`** — greedy
+  packing of consecutive blocks into ~500-token chunks (token count via
+  `tiktoken.get_encoding("cl100k_base")`). Each chunk keeps the list of
+  source `block_ids` it spans, so the LLM's grounding can be traced back
+  to specific paragraphs for highlighting. Oversized single blocks are
+  kept as their own chunk (no mid-paragraph splits in v1).
+- **`embed_texts(texts) -> np.ndarray`** — one `text-embedding-3-small`
+  call for the whole batch, returns an `(n, 1536)` `float32` matrix with
+  rows L2-normalised so cosine ranking is a single dot product.
+- **`retrieve(chunks, embeddings, query, k=4) -> list[Chunk]`** — embeds
+  the query (one extra API call), computes `query @ embeddings.T`, and
+  returns the top-`k` chunks in score order.
+
+**`Session` (in `tutor/store.py`)** gains two fields populated at
+`/session` creation time:
+
+```python
+chunks: list[Chunk] = field(default_factory=list)
+embeddings: np.ndarray | None = None  # (len(chunks), 1536), L2-normalised
+```
+
+**`POST /session`** now does, after the header summary:
+
+```python
+chunks = chunk_blocks(payload.blocks)
+chunk_embeddings = embed_texts([c.text for c in chunks])
+```
+
+…and stashes both on the `Session`. End-to-end latency for `/session` is
+~4-5s on a small page (one chat completion + one embeddings call).
+
+**Done when** ✓ confirmed: a heredoc verification script over an 8-block
+photosynthesis page chunks correctly (8 blocks → 3 chunks at
+target_tokens=120), produces an `(n, 1536)` matrix with row norms ≈ 1.0,
+and retrieves the relevant chunk for queries like "what does chlorophyll
+do?" and "explain the Calvin cycle" on top-1. Live `POST /session` still
+returns 200 with the right shape and now stores chunks + embeddings
+server-side.
+
+### 8. `POST /mode` — done
 
 Body: `{session_id, mode, lang}`. Modes: `teach | summarise | quiz | explain_simply`.
 
@@ -239,10 +274,45 @@ Only the `bullets` content varies by mode (driven by the per-mode system prompt)
 side panel forwards them to the content script so the live page highlights as
 the avatar speaks.
 
-Use OpenAI structured output (`response_format={"type":"json_schema",...}`) to
-guarantee shape.
+**Pieces added**
 
-**Done when** `mode=summarise` returns valid JSON.
+- **`tutor/agent.py`**:
+  - `_DECK_JSON_SCHEMA` — strict OpenAI JSON schema mirroring the pydantic
+    `Deck` shape (every field listed in `required`,
+    `additionalProperties: false` everywhere). Strict mode means the model
+    can never return malformed JSON, so no defensive parsing is needed.
+  - `_DECK_INSTRUCTIONS` — the shared "5-8 segments, anchor_ids must be
+    drawn from the chunk metadata, output language is `{lang}`" preamble.
+  - `_TEACH_RULES`, `_SUMMARISE_RULES`, `_QUIZ_RULES`,
+    `_EXPLAIN_SIMPLY_RULES` — per-mode pedagogy paragraphs prepended to
+    the shared instructions, accessed via `_SYSTEM_PROMPTS[mode]`.
+  - `build_deck(session, mode, lang) -> Deck` — packs every chunk in the
+    session as labelled context (`Chunk c2 (from blocks b4,b5,b6): ...`),
+    calls `gpt-4o-mini` with strict JSON schema response format
+    (`temperature=0.4`), validates via `Deck.model_validate_json`, returns.
+- **`main.py`**:
+  - `@app.post("/mode", response_model=Deck)` — looks up the session via
+    `store.get` (404 if missing), defensively rejects sessions with no
+    chunks (409, unreachable in practice since `/session` always populates
+    chunks), maps the API-key `RuntimeError` to 500.
+
+Quiz mode behaviour: each segment is one Q+A pair. `say` reads the
+question, writes "..." for a thinking beat, then reveals the answer with a
+brief reasoning sentence. `slide.bullets` shows only the question (with
+optional A/B/C/D options) so the user can read along while the avatar
+reveals.
+
+**Done when** ✓ confirmed:
+
+- All four modes return a valid `Deck` in 5-15s on the photosynthesis test
+  page (8 blocks → 3 chunks). Visible per-mode bullet shape difference:
+  `teach` short teaching phrases; `summarise` gist bullets; `quiz` a
+  question per segment with answer in `say`; `explain_simply` plain
+  English with everyday analogies (recipe, kitchen, etc).
+- Every segment's `anchor_ids` is a non-empty subset of the page's block
+  IDs (`b1`-`b8` in the test).
+- 404 fires for unknown `session_id`; 422 fires for unknown `mode` or
+  `lang` literals (with helpful pydantic error message).
 
 ### 9. `POST /chat`
 
@@ -295,6 +365,7 @@ backend/
     ├── __init__.py
     ├── llm.py           # OpenAI client wrapper
     ├── models.py        # pydantic schemas
-    ├── rag.py           # chunk, embed, retrieve
-    └── agent.py         # mode prompts + JSON-schema response shape
+    ├── store.py         # in-memory Session store
+    ├── rag.py           # Chunk, chunk_blocks, embed_texts, retrieve
+    └── agent.py         # summarise_page (Step 6) + mode prompts (Step 8)
 ```
