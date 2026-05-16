@@ -1,22 +1,10 @@
-import Controls from "@/components/Controls";
-import KnowledgeBoard from "@/components/KnowledgeBoard";
-import BeyondPresenceVideo from "@/components/BeyondPresenceVideo";
-import ExtensionListener from "@/components/ExtensionListener";
-
-export default function Home() {
+export default function SidePanelPage() {
   return (
-    <div className="flex flex-col h-screen bg-gray-50 text-gray-900 w-full">
-      {/* Background Listener for Chrome Extension Messages */}
-      <ExtensionListener />
-
-      {/* 1. Video Container (Top) */}
-      <BeyondPresenceVideo />
-
-      {/* 2. Control Toggles */}
-      <Controls />
-
-      {/* 3. Knowledge Board (Bottom, Scrollable) */}
-      <KnowledgeBoard />
+    <div className="flex h-screen w-full flex-col bg-slate-900 p-4 text-white">
+      <h1 className="text-lg font-semibold">TutorStream</h1>
+      <p className="mt-2 text-sm text-slate-400">
+        Side panel is ready. Your teammate&apos;s UI will render here.
+      </p>
     </div>
   );
 }
