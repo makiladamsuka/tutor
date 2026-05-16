@@ -1,16 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getHealth, postMode, postSession } from "../shared/api";
 import type { Deck, Mode, SessionRequest } from "../shared/apiTypes";
-import { AvatarPanel } from "./avatar";
-import { say as speakWelcome } from "./avatar/speechController";
+import AvatarPanel from "./AvatarPanel";
 import ChatPanel from "./ChatPanel";
 import DeckPlayer from "./DeckPlayer";
+import { markPanelUserGesture } from "./audioUnlock";
 import {
   clearPageHighlights,
   highlightAnchors,
-  onSpeechEnd,
   pauseAvatar,
-  playSegmentAt,
+  speakSegment,
   type PlaybackState,
 } from "./deckPlayback";
 import type { PageExtractedPayload } from "../shared/messages";
@@ -92,32 +91,18 @@ export default function App() {
   const [deck, setDeck] = useState<Deck | null>(null);
   const [loadingMode, setLoadingMode] = useState<Mode | null>(null);
   const [modeError, setModeError] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [segmentIndex, setSegmentIndex] = useState(0);
   const [playbackState, setPlaybackState] =
     useState<PlaybackState>("speaking");
   const [deckComplete, setDeckComplete] = useState(false);
-
-  const deckRef = useRef(deck);
-  const playbackRef = useRef(playbackState);
-  const segmentIndexRef = useRef(segmentIndex);
-
-  useEffect(() => {
-    deckRef.current = deck;
-  }, [deck]);
-
-  useEffect(() => {
-    playbackRef.current = playbackState;
-  }, [playbackState]);
-
-  useEffect(() => {
-    segmentIndexRef.current = segmentIndex;
-  }, [segmentIndex]);
 
   const clearDeck = useCallback(() => {
     pauseAvatar();
     setDeck(null);
     setActiveMode(null);
     setModeError(null);
+    setAvatarError(null);
     setLoadingMode(null);
     setSegmentIndex(0);
     setPlaybackState("speaking");
@@ -146,34 +131,6 @@ export default function App() {
       highlightAnchors(ids);
     }
   }, [deck, segmentIndex, activeMode]);
-
-  useEffect(() => {
-    return onSpeechEnd(() => {
-      const currentDeck = deckRef.current;
-      if (!currentDeck?.segments.length) {
-        return;
-      }
-      if (playbackRef.current !== "speaking") {
-        return;
-      }
-
-      const idx = segmentIndexRef.current;
-      const lastIndex = currentDeck.segments.length - 1;
-
-      if (idx >= lastIndex) {
-        setDeckComplete(true);
-        return;
-      }
-
-      setDeckComplete(false);
-      const nextIndex = idx + 1;
-      setSegmentIndex(nextIndex);
-      playSegmentAt(currentDeck, nextIndex, {
-        speak: true,
-        highlight: false,
-      });
-    });
-  }, []);
 
   useEffect(() => {
     const unsubscribe = onBackgroundMessage((msg) => {
@@ -229,12 +186,6 @@ export default function App() {
       });
       setSessionId(res.session_id);
       setHeaderSummary(res.header_summary);
-      const intro = res.header_summary.trim();
-      if (intro) {
-        speakWelcome(
-          `Session started. ${intro} Choose a mode when you are ready to begin.`,
-        );
-      }
     } catch (err) {
       setSessionId(null);
       setHeaderSummary(null);
@@ -307,20 +258,26 @@ export default function App() {
     return Math.min(Math.max(0, segmentIndex), n - 1);
   }
 
-  function handleDeckPrev() {
+  function goToSegment(index: number) {
     if (!deck || deck.segments.length === 0) {
       return;
     }
-    const idx = clampedSegmentIndex(deck);
+    const idx = Math.min(
+      Math.max(0, index),
+      deck.segments.length - 1,
+    );
+    markPanelUserGesture();
+    setDeckComplete(false);
+    setSegmentIndex(idx);
+    setPlaybackState("speaking");
+  }
+
+  function handleDeckPrev() {
+    const idx = deck ? clampedSegmentIndex(deck) : 0;
     if (idx <= 0) {
       return;
     }
-    if (playbackState === "speaking") {
-      pauseAvatar();
-    }
-    setDeckComplete(false);
-    setSegmentIndex(idx - 1);
-    setPlaybackState("held");
+    goToSegment(idx - 1);
   }
 
   function handleDeckNext() {
@@ -331,25 +288,36 @@ export default function App() {
     if (idx >= deck.segments.length - 1) {
       return;
     }
-    if (playbackState === "speaking") {
-      pauseAvatar();
-    }
-    setDeckComplete(false);
-    setSegmentIndex(idx + 1);
-    setPlaybackState("held");
+    goToSegment(idx + 1);
   }
 
-  function handleDeckResume() {
-    if (!deck || playbackState !== "held") {
+  function handleDeckReplay() {
+    if (!deck || deck.segments.length === 0) {
       return;
     }
     const idx = clampedSegmentIndex(deck);
-    if (!deck.segments[idx]) {
+    const segment = deck.segments[idx];
+    if (!segment) {
+      return;
+    }
+    markPanelUserGesture();
+    setDeckComplete(false);
+    setPlaybackState("speaking");
+    speakSegment(segment);
+  }
+
+  function handleDeckAutoAdvance() {
+    if (!deck || deck.segments.length === 0) {
+      return;
+    }
+    const idx = clampedSegmentIndex(deck);
+    if (idx >= deck.segments.length - 1) {
+      setDeckComplete(true);
       return;
     }
     setDeckComplete(false);
+    setSegmentIndex(idx + 1);
     setPlaybackState("speaking");
-    playSegmentAt(deck, idx, { speak: true, highlight: false });
   }
 
   async function handleMode(mode: Mode) {
@@ -357,11 +325,9 @@ export default function App() {
       return;
     }
 
+    markPanelUserGesture();
     setModeError(null);
     setLoadingMode(mode);
-    pauseAvatar();
-    setDeck(null);
-    setActiveMode(null);
     setDeckComplete(false);
     clearPageHighlights();
     try {
@@ -379,7 +345,6 @@ export default function App() {
       setPlaybackState("speaking");
       setActiveMode(mode);
       setDeck(result);
-      playSegmentAt(result, 0, { speak: true, highlight: false });
     } catch (err) {
       setDeck(null);
       setActiveMode(null);
@@ -410,24 +375,14 @@ export default function App() {
       ? 0
       : Math.min(segmentIndex, deckSegmentCount - 1);
 
-  const currentSegment =
-    deck && deckSegmentCount > 0 ? deck.segments[safeSegmentIndex] : null;
-  const currentSay =
-    deck && playbackState === "speaking" && currentSegment
-      ? currentSegment.say
-      : deck && playbackState === "held" && currentSegment
-        ? currentSegment.say
-        : null;
-  const slideLabel =
-    deck && activeMode && deckSegmentCount > 0
-      ? `${modeLabel(activeMode)} · slide ${safeSegmentIndex + 1} of ${deckSegmentCount}`
-      : null;
-
   return (
-    <main className="panel-root">
+    <main
+      className="panel-root"
+      onPointerDownCapture={() => markPanelUserGesture()}
+    >
       <h1>Tutor</h1>
       <p className="panel-subtitle">
-        Tutor: session-linked avatar + lesson voice + highlights
+        Beyond Presence tutor + slide highlights
       </p>
 
       <section className="panel-section">
@@ -496,14 +451,6 @@ export default function App() {
         )}
       </section>
 
-      <AvatarPanel
-        sessionId={sessionId}
-        articleTitle={extracted?.title ?? null}
-        headerSummary={headerSummary}
-        currentSay={currentSay}
-        slideLabel={slideLabel}
-      />
-
       <section className="panel-section">
         <h2 className="panel-heading">Modes</h2>
         {!sessionId && (
@@ -544,6 +491,19 @@ export default function App() {
             {modeError}
           </p>
         )}
+        {avatarError && (
+          <p className="panel-status panel-status--err panel-status--pre">
+            {avatarError}
+          </p>
+        )}
+        <AvatarPanel
+          sessionId={sessionId}
+          deck={deck}
+          segmentIndex={safeSegmentIndex}
+          playbackState={playbackState}
+          onAutoAdvance={handleDeckAutoAdvance}
+          onError={setAvatarError}
+        />
         {deck && activeMode && deckSegmentCount > 0 && (
           <>
             <DeckPlayer
@@ -554,12 +514,11 @@ export default function App() {
               deckComplete={deckComplete}
               onPrev={handleDeckPrev}
               onNext={handleDeckNext}
-              onResume={handleDeckResume}
+              onReplay={handleDeckReplay}
             />
             <p className="panel-hint">
-              Lesson voice reads each slide on the article tab. Highlights follow
-              the current slide. Prev/Next holds speech; Resume continues
-              auto-advance.
+              Avatar speaks each slide. Highlights follow on the article tab.
+              Prev/Next speaks the next card. Replay re-reads this slide.
             </p>
           </>
         )}

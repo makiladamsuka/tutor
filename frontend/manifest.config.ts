@@ -5,7 +5,7 @@ export default defineManifest({
   name: "TutorStream",
   version: "1.0.0",
   description: "Beyond Presence AI Tutor Extension",
-  permissions: ["sidePanel", "activeTab", "scripting", "tabs"],
+  permissions: ["sidePanel", "activeTab", "scripting", "tabs", "microphone"],
   host_permissions: ["<all_urls>"],
   content_security_policy: {
     extension_pages:

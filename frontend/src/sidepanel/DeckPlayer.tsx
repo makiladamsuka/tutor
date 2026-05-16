@@ -16,7 +16,7 @@ type DeckPlayerProps = {
   deckComplete?: boolean;
   onPrev: () => void;
   onNext: () => void;
-  onResume: () => void;
+  onReplay: () => void;
 };
 
 export default function DeckPlayer({
@@ -27,7 +27,7 @@ export default function DeckPlayer({
   deckComplete = false,
   onPrev,
   onNext,
-  onResume,
+  onReplay,
 }: DeckPlayerProps) {
   const total = deck.segments.length;
   const safeIndex =
@@ -58,7 +58,7 @@ export default function DeckPlayer({
         <span className="panel-deck-segment-id">({segment.id})</span>
       </p>
       <p className="panel-deck-playback">
-        {playbackState === "speaking" ? "Speaking" : "Held"}
+        {playbackState === "speaking" ? "Speaking" : "Paused"}
       </p>
 
       <div className="panel-deck-segment panel-deck-segment--current">
@@ -90,18 +90,17 @@ export default function DeckPlayer({
         <button
           type="button"
           className="panel-button panel-button--nav"
-          disabled={playbackState === "speaking"}
-          onClick={onResume}
+          onClick={onReplay}
         >
-          Resume
+          Replay slide
         </button>
       </div>
       {deckComplete && atEnd && playbackState === "speaking" && (
         <p className="panel-status panel-status--ok">Deck complete.</p>
       )}
       <p className="panel-hint panel-deck-nav-hint">
-        Prev/Next hold speech. Resume speaks the current slide and continues
-        auto-advance.
+        Prev/Next moves slides and the tutor speaks the new card. Auto-advance
+        continues after each slide finishes.
       </p>
     </article>
   );

@@ -1,8 +1,11 @@
 /** Backend HTTP client (Step 5). */
 
 import type {
+  AvatarListResponse,
   ChatRequest,
   ChatResponse,
+  CreateCallRequest,
+  CreateCallResponse,
   Deck,
   Flashcard,
   FlashcardRequest,
@@ -11,6 +14,8 @@ import type {
   SessionRequest,
   SessionResponse,
 } from "./apiTypes";
+
+export type { CreateCallResponse } from "./apiTypes";
 
 export const API_BASE = "http://localhost:8000";
 
@@ -88,6 +93,17 @@ export function postFlashcards(
   body: FlashcardRequest,
 ): Promise<Flashcard[]> {
   return apiFetch<Flashcard[]>("/flashcards", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getAvatars(): Promise<AvatarListResponse> {
+  return apiFetch<AvatarListResponse>("/api/avatars");
+}
+
+export function createCall(body: CreateCallRequest): Promise<CreateCallResponse> {
+  return apiFetch<CreateCallResponse>("/api/create-call", {
     method: "POST",
     body: JSON.stringify(body),
   });

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { postChat } from "../shared/api";
-import { say as speakSay, pause as pauseSpeech } from "./avatar/speechController";
+import { pauseAvatar, speakText } from "./deckPlayback";
 import { highlightAnchors } from "./deckPlayback";
 
 type ChatPanelProps = {
@@ -24,7 +24,7 @@ export default function ChatPanel({ sessionId, disabled = false }: ChatPanelProp
     setError(null);
     setReply(null);
     setSending(true);
-    pauseSpeech();
+    pauseAvatar();
 
     try {
       const res = await postChat({ session_id: sessionId, text: trimmed });
@@ -34,7 +34,7 @@ export default function ChatPanel({ sessionId, disabled = false }: ChatPanelProp
         highlightAnchors(res.highlight_anchor_ids);
       }
       if (res.reply.trim()) {
-        speakSay(res.reply);
+        speakText(res.reply);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

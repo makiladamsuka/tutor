@@ -1,17 +1,19 @@
 import type { Deck, Segment } from "../shared/apiTypes";
-import { say as speechSay, pause as speechPause, onSpeechEnd } from "./avatar/speechController";
+import { say as fallbackSay } from "./avatar/speechController";
 import { sendToBackground } from "../shared/messaging";
 
 export type PlaybackState = "speaking" | "held";
 
-export type PlaySegmentOptions = {
-  /** Speak `segment.say` via browser TTS (default true). */
-  speak?: boolean;
-  /** Send highlights to the article tab (default true). */
-  highlight?: boolean;
+export type AvatarBridge = {
+  sendSay: (text: string) => void;
+  isConnected: () => boolean;
 };
 
-export { onSpeechEnd };
+let avatarBridge: AvatarBridge | null = null;
+
+export function registerAvatarBridge(bridge: AvatarBridge | null): void {
+  avatarBridge = bridge;
+}
 
 export function highlightAnchors(anchorIds: string[]): void {
   if (anchorIds.length === 0) {
@@ -38,11 +40,29 @@ function clampIndex(deck: Deck, index: number): number {
   return Math.min(Math.max(0, index), n - 1);
 }
 
-/** Single entry point for slide audio + optional highlights. */
+export function speakText(text: string): void {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return;
+  }
+  if (avatarBridge?.isConnected()) {
+    avatarBridge.sendSay(trimmed);
+    return;
+  }
+  fallbackSay(trimmed);
+}
+
+export function speakSegment(segment: Segment): void {
+  if (segment.anchor_ids.length > 0) {
+    highlightAnchors(segment.anchor_ids);
+  }
+  speakText(segment.say);
+}
+
 export function playSegmentAt(
   deck: Deck,
   index: number,
-  options: PlaySegmentOptions = {},
+  options: { speak?: boolean; highlight?: boolean } = {},
 ): void {
   const { speak = true, highlight = true } = options;
   const segment = deck.segments[clampIndex(deck, index)];
@@ -53,17 +73,10 @@ export function playSegmentAt(
     highlightAnchors(segment.anchor_ids);
   }
   if (speak) {
-    speechSay(segment.say);
+    speakSegment(segment);
   }
-}
-
-export function speakSegment(segment: Segment): void {
-  if (segment.anchor_ids.length > 0) {
-    highlightAnchors(segment.anchor_ids);
-  }
-  speechSay(segment.say);
 }
 
 export function pauseAvatar(): void {
-  speechPause();
+  console.info("[tutor] avatar.pause()");
 }
