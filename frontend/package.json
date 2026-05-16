@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:ext": "next build",
+    "build:ext": "next build && node scripts/post-build-ext.mjs",
     "start": "next start",
     "lint": "eslint"
   },
