@@ -40,13 +40,13 @@ don't move to the next step until the current one passes.
 | -- | -------------------------- | ------ |
 | 1  | Tooling + venv (`uv`)      | done   |
 | 2  | Hello FastAPI + `/health`  | done   |
-| 3  | OpenAI smoke test          | next   |
-| 4  | CORS for the extension     | todo   |
-| 5  | Project layout (`tutor/`)  | todo   |
+| 3  | OpenAI smoke test          | done   |
+| 4  | CORS for the extension     | done   |
+| 5  | Project layout (`tutor/`)  | next   |
 | 6  | `POST /session`            | todo   |
 | 7  | Chunking + RAG             | todo   |
 | 8  | `POST /mode`               | todo   |
-| 9  | `WS /ws/chat`              | todo   |
+| 9  | `POST /chat`               | todo   |
 | 10 | `POST /flashcards`         | todo   |
 
 ### 1. Tooling and venv — done
@@ -73,29 +73,44 @@ curl localhost:8000/health   # → {"ok":true}
 
 **Done when** `/health` returns `{"ok":true}` and `/docs` shows the Swagger UI.
 
-### 3. OpenAI smoke test — next
+### 3. OpenAI smoke test — done
 
 ```bash
 uv add openai python-dotenv
+cp .env.example .env   # then edit .env and paste your real OPENAI_API_KEY
 ```
 
-Create `backend/.env`:
+`main.py` now calls `load_dotenv()` at startup so the `OPENAI_API_KEY` from
+`.env` is read into the process environment. The smoke test was a temporary
+`GET /test/openai` that called `gpt-4o-mini` with "say hi in 5 words"; once it
+returned a real response (`HTTP 200 {"reply":"Hello there, how are you?"}`),
+the route was removed. The OpenAI client is constructed lazily inside the
+endpoints that need it.
 
+**Done when** ✓ confirmed: OpenAI returns a real chat completion through the
+backend.
+
+### 4. CORS for the extension — done
+
+`main.py` registers `CORSMiddleware` with an `allow_origin_regex` that
+matches Chrome extensions (any extension ID), `http://localhost`, and
+`http://127.0.0.1` (with or without a port). Credentials, all methods, and
+all headers are allowed because the side panel will send `Content-Type:
+application/json` and may use cookies later.
+
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^(chrome-extension://.+|http://localhost(:\d+)?|http://127\.0\.0\.1(:\d+)?)$",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 ```
-OPENAI_API_KEY=sk-...
-```
 
-Add a temporary `GET /test/openai` that calls `gpt-4o-mini` with "say hi in 5
-words". Confirm a real response, then delete the test route.
-
-**Done when** `/test/openai` returns text from OpenAI.
-
-### 4. CORS for the extension
-
-Add `CORSMiddleware` allowing `chrome-extension://*` and `http://localhost:*`.
-
-**Done when** a request with `Origin: chrome-extension://abc` returns the
-matching `Access-Control-Allow-Origin` header.
+**Done when** ✓ confirmed: requests from `chrome-extension://...` and
+`http://localhost:5173` return a matching `Access-Control-Allow-Origin`;
+unrelated origins do not.
 
 ### 5. Project layout
 
@@ -142,25 +157,54 @@ same structured shape:
       "slide": {
         "title": "Slide title",
         "bullets": ["...", "..."]
-      }
+      },
+      "anchor_ids": ["b1"]
     }
   ]
 }
 ```
+
+Only the `bullets` content varies by mode (driven by the per-mode system prompt):
+
+| Mode | `bullets` content |
+| --- | --- |
+| **Teach me** | the key teaching points the avatar is currently saying |
+| **Quiz me** | the question text (avatar reads it; slide displays it) |
+| **Summarise** | summary bullets for that section |
+| **Explain simply** | simplified explanation bullets |
+
+`anchor_ids` are the stable block IDs from the original page extraction; the
+side panel forwards them to the content script so the live page highlights as
+the avatar speaks.
 
 Use OpenAI structured output (`response_format={"type":"json_schema",...}`) to
 guarantee shape.
 
 **Done when** `mode=summarise` returns valid JSON.
 
-### 9. `WS /ws/chat`
+### 9. `POST /chat`
 
-`WS /ws/chat?session_id=...`. On each user message: embed → cosine-rank chunks
-→ stuff into prompt → stream tokens back. Optionally emit a single segment
-slide if the answer benefits from one.
+Body: `{session_id, text}`. Returns `{reply, highlight_anchor_ids}` in a single
+HTTP response — there is no streaming protocol on the wire. The avatar's TTS
+provides the perceived stream.
 
-**Done when** `wscat -c ws://localhost:8000/ws/chat?session_id=...` shows
-streaming tokens.
+```json
+// request
+{ "session_id": "9f3b...", "text": "what does chlorophyll do?" }
+
+// response
+{
+  "reply": "Chlorophyll is the green pigment...",
+  "highlight_anchor_ids": ["b2"]
+}
+```
+
+Pipeline: embed the user text → cosine-rank against the session's chunks →
+take top-4 → stuff into the system prompt → call OpenAI → return reply plus
+the anchor IDs of the chunks that grounded the answer.
+
+**Done when** `curl -X POST localhost:8000/chat -d '{"session_id":"...","text":"what is X?"}'`
+returns a JSON body with both `reply` and `highlight_anchor_ids` populated.
 
 ### 10. `POST /flashcards`
 
