@@ -47,14 +47,14 @@ export default function Card({ card }: { card: StudyCard }) {
           {!isEditing ? (
             <button 
               onClick={() => setIsEditing(true)}
-              className="text-xs text-yellow-700 hover:text-yellow-900 underline"
+              className="text-xs text-yellow-700 hover:text-yellow-900 underline transition-all active:scale-95"
             >
               Edit
             </button>
           ) : (
             <button 
               onClick={handleSave}
-              className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded hover:bg-yellow-300 font-medium"
+              className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded hover:bg-yellow-300 font-medium transition-all active:scale-95 shadow-sm"
             >
               Save
             </button>

@@ -39,9 +39,9 @@ export default function Controls() {
               <button
                 key={m.id}
                 onClick={() => setMode(m.id)}
-                className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                className={`px-3 py-1 text-xs font-medium rounded-full transition-all active:scale-95 ${
                   mode === m.id
-                    ? "bg-blue-100 text-blue-700"
+                    ? "bg-blue-100 text-blue-700 shadow-sm ring-1 ring-blue-300"
                     : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
@@ -59,9 +59,9 @@ export default function Controls() {
               <button
                 key={l.id}
                 onClick={() => setLanguage(l.id)}
-                className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                className={`px-3 py-1 text-xs font-medium rounded-full transition-all active:scale-95 ${
                   language === l.id
-                    ? "bg-green-100 text-green-700"
+                    ? "bg-green-100 text-green-700 shadow-sm ring-1 ring-green-300"
                     : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
@@ -71,7 +71,7 @@ export default function Controls() {
             {/* Temporary button to test state */}
             <button 
               onClick={handleTestAddCard}
-              className="ml-2 px-2 py-1 text-[10px] bg-black text-white rounded hover:bg-gray-800"
+              className="ml-2 px-2 py-1 text-[10px] bg-black text-white rounded hover:bg-gray-800 transition-all active:scale-95 shadow-sm"
             >
               + Test Card
             </button>

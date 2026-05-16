@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useCardStore } from "../store/useCardStore";
+// import { BeyondPresence } from "@bey-dev/sdk"; // Commented out until real SDK is installed
 
 export default function BeyondPresenceVideo() {
   const mode = useCardStore((state) => state.mode);
@@ -65,38 +66,68 @@ export default function BeyondPresenceVideo() {
     return () => window.removeEventListener("message", handleMessage);
   }, []);
 
-  // TODO: Initialize real Beyond Presence SDK here
-  /*
+  // Initialize real Beyond Presence SDK here
   useEffect(() => {
     const initBP = async () => {
-      await BeyondPresence.initialize({ streamContainer: "#bp-video-container" });
+      try {
+        // 1. Fetch the secure LiveKit token from our Python backend
+        const response = await fetch("http://localhost:8000/api/get-avatar-token");
+        const data = await response.json();
+
+        if (data.success) {
+          // 2. Initialize the SDK using the token from the backend
+          // @ts-ignore - The SDK might use a different initialization method name
+          await BeyondPresence.initialize({ 
+            livekitToken: data.livekit_token,
+            livekitUrl: data.livekit_url,
+            streamContainer: "#bp-video-container",
+            persona: getPersona()
+          });
+
+          // Hide the mock UI once the real video stream is initialized
+          const mockUI = document.getElementById("mock-avatar-ui");
+          if (mockUI) mockUI.style.display = "none";
+        } else {
+          console.error("Backend failed to generate token:", data.error);
+        }
+
+      } catch (error) {
+        console.error("Failed to initialize Beyond Presence:", error);
+      }
     };
-    initBP();
+    // initBP(); // Uncomment this when you have the REAL SDK installed
   }, []);
-  */
 
   return (
     <div 
       id="bp-video-container"
-      className="relative w-full h-64 bg-slate-900 flex-shrink-0 flex flex-col items-center justify-center overflow-hidden border-b-4 border-blue-500 transition-colors duration-500"
+      className="relative w-full h-64 bg-slate-900 flex-shrink-0 flex flex-col items-center justify-center overflow-hidden border-b-4 border-blue-500 transition-colors duration-500 [&>video]:absolute [&>video]:inset-0 [&>video]:w-full [&>video]:h-full [&>video]:object-cover [&>iframe]:absolute [&>iframe]:inset-0 [&>iframe]:w-full [&>iframe]:h-full"
       style={{ borderColor: isTyping ? '#4ade80' : '#3b82f6' }}
     >
       {/* Mock Video Stream Background (To simulate Contextual Backgrounds) */}
       <div 
-        className="absolute inset-0 opacity-40 bg-cover bg-center transition-all duration-1000" 
+        className="absolute inset-0 opacity-40 bg-cover bg-center transition-all duration-1000 z-0" 
         style={{ 
           backgroundImage: background === 'laboratory' 
             ? "url('https://images.unsplash.com/photo-1532094349884-543bc11b234d?q=80&w=1000&auto=format&fit=crop')"
             : "url('https://images.unsplash.com/photo-1524169358666-79f22534bc6e?q=80&w=1000&auto=format&fit=crop')" 
         }}
       />
+
+      {/* Mock Video Element (Simulating the Beyond Presence Avatar Stream) */}
+      <video
+        className="absolute inset-0 w-full h-full object-cover z-0 opacity-80"
+        autoPlay
+        loop
+        muted
+        playsInline
+        src="https://cdn.pixabay.com/video/2020/05/24/40061-424560731_large.mp4"
+        style={{ pointerEvents: 'none' }}
+      />
       
-      {/* Mock Avatar UI */}
-      <div className="z-10 flex flex-col items-center">
-        <div className={`w-20 h-20 rounded-full border-4 flex items-center justify-center text-4xl mb-2 transition-all duration-500 shadow-lg bg-slate-800 ${isTyping ? 'border-green-400 scale-105' : 'border-blue-500'}`}>
-          {sentiment === 'empathetic' ? '🥺' : sentiment === 'happy' ? '😊' : '🤖'}
-        </div>
-        <h2 className="text-white font-bold drop-shadow-md">{getPersona()}</h2>
+      {/* Mock Avatar UI - We give this an ID so we can hide it when the real video loads */}
+      <div id="mock-avatar-ui" className="z-10 flex flex-col items-center mt-8">
+        <h2 className="text-white font-bold drop-shadow-md text-xl">{getPersona()}</h2>
         
         <div className="flex flex-wrap justify-center gap-2 mt-3 text-[10px] uppercase tracking-wider font-semibold">
           <span className="bg-black/60 text-white px-2 py-1 rounded backdrop-blur-sm">
