@@ -68,7 +68,9 @@ export type TutorMessage =
 export type TabMessage =
   | HubPingMessage
   | HubRequestContentPingMessage
-  | PageRequestExtractMessage;
+  | PageRequestExtractMessage
+  | PageHighlightMessage
+  | PageClearHighlightsMessage;
 
 const TUTOR_MESSAGE_TYPES: TutorMessage["type"][] = [
   "hub:ping",
@@ -100,6 +102,8 @@ export function isTabMessage(value: unknown): value is TabMessage {
   return (
     type === "hub:ping" ||
     type === "hub:request-content-ping" ||
-    type === "page:requestExtract"
+    type === "page:requestExtract" ||
+    type === "page:highlight" ||
+    type === "page:clearHighlights"
   );
 }

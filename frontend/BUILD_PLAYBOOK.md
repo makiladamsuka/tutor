@@ -247,9 +247,30 @@ cd frontend && npm run build && npm run lint
 
 ## Step 9 — Highlights: `page:highlight` / `clearHighlights`
 
-**What:** When segment changes (or on Resume), panel sends **`page:highlight`** with **`anchor_ids`** from the deck; content script wraps **`mark`** and **`scrollIntoView`**.
+**What:** When the active deck segment changes, panel sends **`page:highlight`** with that segment’s **`anchor_ids`**; content script marks `[data-tutor-id]` nodes and scrolls the first match.
 
-**Done when:** Wikipedia paragraphs highlight to match backend **`anchor_ids`** for the current segment.
+**Do:**
+
+- [`frontend/src/content/highlight.ts`](src/content/highlight.ts) — `highlightBlocks`, `clearHighlights`, `.tutor-highlight` styles.
+- Background forwards `page:highlight` / `page:clearHighlights` to the active http(s) tab.
+- [`deckPlayback.ts`](src/sidepanel/deckPlayback.ts) — `highlightAnchors` / `clearPageHighlights`; called from `speakSegment`, Prev/Next, Resume; clear on `clearDeck`.
+
+**Verify:**
+
+```bash
+cd frontend && npm run build && npm run lint
+# Reload extension
+```
+
+| Check | Expected |
+|-------|----------|
+| Scrape Wikipedia | `data-tutor-id` on paragraphs (DevTools on article tab) |
+| Load Teach, slide 1 | Yellow marks on relevant paragraphs; page scrolls |
+| Next / Prev | Highlights move to new segment’s blocks |
+| Resume | Highlights refresh for current slide |
+| Re-scrape | Old marks cleared (`clearPageHighlights` in `clearDeck`) |
+
+**Done when:** Wikipedia → Scrape → session → mode → highlights follow slide changes on the **article tab**; build + lint pass.
 
 ---
 

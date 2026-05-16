@@ -35,6 +35,15 @@ try {
   console.warn("[tutor] sidePanel.setPanelBehavior failed", err);
 }
 
+/** Tab where we last scraped / got content-ping — used when side panel has focus. */
+let lastArticleTabId: number | undefined;
+
+function rememberArticleTab(tabId: number | undefined): void {
+  if (tabId !== undefined) {
+    lastArticleTabId = tabId;
+  }
+}
+
 async function getActiveTabId(): Promise<number | undefined> {
   const [tab] = await chrome.tabs.query({
     active: true,
@@ -47,6 +56,26 @@ async function getActiveTabId(): Promise<number | undefined> {
   // Side panel focus can make the active tab the panel page — skip non-http(s).
   if (tab.url?.startsWith("http://") || tab.url?.startsWith("https://")) {
     return id;
+  }
+  return undefined;
+}
+
+/** Prefer focused http(s) tab; fall back to last scraped article tab. */
+async function getArticleTabId(): Promise<number | undefined> {
+  const active = await getActiveTabId();
+  if (active !== undefined) {
+    return active;
+  }
+  if (lastArticleTabId === undefined) {
+    return undefined;
+  }
+  try {
+    const tab = await chrome.tabs.get(lastArticleTabId);
+    if (tab.url?.startsWith("http://") || tab.url?.startsWith("https://")) {
+      return lastArticleTabId;
+    }
+  } catch {
+    lastArticleTabId = undefined;
   }
   return undefined;
 }
@@ -83,6 +112,33 @@ async function requestPageExtract(tabId: number): Promise<void> {
   } catch (err) {
     console.warn("[tutor] page:requestExtract failed", err);
     throw err;
+  }
+}
+
+async function forwardToContentTab(
+  message: TutorMessage,
+): Promise<number | undefined> {
+  const tabId = await getArticleTabId();
+  if (tabId === undefined) {
+    console.warn(
+      "[tutor]",
+      message.type,
+      "— no article tab (scrape the page first, or focus the article tab)",
+    );
+    return undefined;
+  }
+  try {
+    await chrome.tabs.sendMessage(tabId, message);
+    console.info("[tutor]", message.type, "→ tab", tabId);
+    return tabId;
+  } catch (err) {
+    console.warn(
+      "[tutor]",
+      message.type,
+      "forward failed — reload the article tab at chrome://extensions",
+      err,
+    );
+    return undefined;
   }
 }
 
@@ -136,6 +192,7 @@ async function handleMessage(
 
     case "hub:content-ping": {
       console.info("[tutor] content-ping", message.payload?.url);
+      rememberArticleTab(sender.tab?.id);
       await forwardToPanel(message);
       return {
         type: "hub:pong",
@@ -148,14 +205,17 @@ async function handleMessage(
         console.warn("[tutor] page:requestExtract from content tab, ignored");
         return undefined;
       }
-      const tabId = await getActiveTabId();
+      const tabId = await getArticleTabId();
       if (tabId === undefined) {
-        console.warn("[tutor] page:requestExtract — no http(s) active tab");
+        console.warn(
+          "[tutor] page:requestExtract — focus the article tab, then scrape",
+        );
         return {
           type: "hub:pong",
           payload: { from: "background" },
         };
       }
+      rememberArticleTab(tabId);
       console.info("[tutor] page:requestExtract → tab", tabId);
       await requestPageExtract(tabId);
       return {
@@ -165,16 +225,43 @@ async function handleMessage(
     }
 
     case "page:extracted": {
+      rememberArticleTab(sender.tab?.id);
       console.info(
         "[tutor] page:extracted",
         message.payload.title,
         message.payload.blocks.length,
         "blocks",
+        "tab",
+        sender.tab?.id,
       );
       await forwardToPanel(message);
       return {
         type: "hub:pong",
         payload: { from: "background" },
+      };
+    }
+
+    case "page:highlight": {
+      if (sender.tab) {
+        console.warn("[tutor] page:highlight from content tab, ignored");
+        return undefined;
+      }
+      const tabId = await forwardToContentTab(message);
+      return {
+        type: "hub:pong",
+        payload: { from: "background", tabId },
+      };
+    }
+
+    case "page:clearHighlights": {
+      if (sender.tab) {
+        console.warn("[tutor] page:clearHighlights from content tab, ignored");
+        return undefined;
+      }
+      const tabId = await forwardToContentTab(message);
+      return {
+        type: "hub:pong",
+        payload: { from: "background", tabId },
       };
     }
 

@@ -3,6 +3,8 @@ import { getHealth, postMode, postSession } from "../shared/api";
 import type { Deck, Mode, SessionRequest } from "../shared/apiTypes";
 import DeckPlayer from "./DeckPlayer";
 import {
+  clearPageHighlights,
+  highlightAnchors,
   pauseAvatar,
   speakSegment,
   type PlaybackState,
@@ -97,6 +99,7 @@ export default function App() {
     setLoadingMode(null);
     setSegmentIndex(0);
     setPlaybackState("speaking");
+    clearPageHighlights();
   }, []);
 
   const requestContentStatus = useCallback(async () => {
@@ -106,6 +109,21 @@ export default function App() {
       // Content section stays empty until user has an article tab + reload.
     }
   }, []);
+
+  // Highlight current slide whenever deck or segment changes (all modes).
+  useEffect(() => {
+    if (!deck?.segments.length) {
+      return;
+    }
+    const idx = Math.min(
+      Math.max(0, segmentIndex),
+      deck.segments.length - 1,
+    );
+    const ids = deck.segments[idx]?.anchor_ids ?? [];
+    if (ids.length > 0) {
+      highlightAnchors(ids);
+    }
+  }, [deck, segmentIndex, activeMode]);
 
   useEffect(() => {
     const unsubscribe = onBackgroundMessage((msg) => {
@@ -247,7 +265,7 @@ export default function App() {
     const nextIndex = idx - 1;
     setSegmentIndex(nextIndex);
     setPlaybackState("held");
-    console.info("[tutor] anchor_ids:", deck.segments[nextIndex].anchor_ids);
+    highlightAnchors(deck.segments[nextIndex].anchor_ids);
   }
 
   function handleDeckNext() {
@@ -264,7 +282,7 @@ export default function App() {
     const nextIndex = idx + 1;
     setSegmentIndex(nextIndex);
     setPlaybackState("held");
-    console.info("[tutor] anchor_ids:", deck.segments[nextIndex].anchor_ids);
+    highlightAnchors(deck.segments[nextIndex].anchor_ids);
   }
 
   function handleDeckResume() {
@@ -289,6 +307,7 @@ export default function App() {
     setLoadingMode(mode);
     setDeck(null);
     setActiveMode(null);
+    clearPageHighlights();
     try {
       const result = await postMode({
         session_id: sessionId,
@@ -338,7 +357,7 @@ export default function App() {
   return (
     <main className="panel-root">
       <h1>Tutor</h1>
-      <p className="panel-subtitle">Step 8: scrape + session + deck navigation</p>
+      <p className="panel-subtitle">Step 9: scrape + session + highlights</p>
 
       <section className="panel-section">
         <h2 className="panel-heading">Scrape</h2>
@@ -447,15 +466,22 @@ export default function App() {
           </p>
         )}
         {deck && activeMode && deckSegmentCount > 0 && (
-          <DeckPlayer
-            deck={deck}
-            mode={activeMode}
-            segmentIndex={safeSegmentIndex}
-            playbackState={playbackState}
-            onPrev={handleDeckPrev}
-            onNext={handleDeckNext}
-            onResume={handleDeckResume}
-          />
+          <>
+            <DeckPlayer
+              deck={deck}
+              mode={activeMode}
+              segmentIndex={safeSegmentIndex}
+              playbackState={playbackState}
+              onPrev={handleDeckPrev}
+              onNext={handleDeckNext}
+              onResume={handleDeckResume}
+            />
+            <p className="panel-hint">
+              Highlights work for all modes (Teach, Summarise, Quiz, Explain
+              simply) on the article tab. Switch to that tab to see yellow
+              marks and scroll. Prev/Next updates highlights.
+            </p>
+          </>
         )}
       </section>
 

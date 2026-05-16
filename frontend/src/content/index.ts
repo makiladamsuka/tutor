@@ -1,6 +1,7 @@
 /** Injected on http(s) pages — inject (Step 3), hub (Step 2), scrape (Step 4). */
 
 import { extractPage } from "./extract";
+import { clearHighlights, highlightBlocks } from "./highlight";
 import {
   isTabMessage,
   type HubContentPingMessage,
@@ -94,6 +95,24 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
 
   if (raw.type === "hub:ping") {
     console.info("[tutor] content script received ping");
+    sendResponse({
+      type: "hub:pong",
+      payload: { from: "content" },
+    } satisfies HubPongMessage);
+    return true;
+  }
+
+  if (raw.type === "page:highlight") {
+    highlightBlocks(raw.payload.anchor_ids);
+    sendResponse({
+      type: "hub:pong",
+      payload: { from: "content" },
+    } satisfies HubPongMessage);
+    return true;
+  }
+
+  if (raw.type === "page:clearHighlights") {
+    clearHighlights();
     sendResponse({
       type: "hub:pong",
       payload: { from: "content" },

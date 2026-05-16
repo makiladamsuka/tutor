@@ -18,8 +18,8 @@ import json
 from typing import Any
 
 from tutor.llm import DEFAULT_CHAT_MODEL, get_client
-from tutor.models import Block, Deck, Flashcard, Lang, Mode
-from tutor.rag import retrieve
+from tutor.models import Block, Deck, Flashcard, Lang, Mode, Segment
+from tutor.rag import Chunk, retrieve
 from tutor.store import Session
 
 # === Header summary (Step 6) ===
@@ -126,7 +126,9 @@ order, building understanding one concept at a time.
 - `say`: 2-4 sentences, conversational, as if explaining to a student
   sitting next to you. Connect this beat to the previous one.
 - `slide.bullets`: the KEY TEACHING POINTS for this beat — short phrases
-  (not full sentences) the learner reads while the avatar elaborates."""
+  (not full sentences) the learner reads while the avatar elaborates.
+- `anchor_ids`: the blocks you are teaching in this beat (1-3 block IDs)
+  so the live page highlights them."""
 
 
 _SUMMARISE_RULES = """Mode: SUMMARISE.
@@ -134,7 +136,9 @@ Each segment covers one section of the page. Together the segments are a
 condensed read-through.
 - `say`: 1-3 sentences narrating the takeaway of this section.
 - `slide.bullets`: the SUMMARY BULLETS for that section — concise,
-  scannable, the kind of bullets a student would put in their notes."""
+  scannable, the kind of bullets a student would put in their notes.
+- `anchor_ids`: the blocks this summary section is grounded in (1-3 block
+  IDs) so the live page highlights the source text."""
 
 
 _QUIZ_RULES = """Mode: QUIZ ME.
@@ -155,7 +159,9 @@ Audience: a curious 12-year-old. Avoid jargon. Use concrete everyday
 analogies (kitchen, sports, animals, common objects).
 - `say`: 2-4 sentences in plain language with at least one analogy.
 - `slide.bullets`: 3-5 short, plain-English bullets. No technical terms
-  unless the bullet itself defines them in simple words."""
+  unless the bullet itself defines them in simple words.
+- `anchor_ids`: the blocks this simple explanation refers to (1-3 block
+  IDs) so the live page highlights the matching paragraphs."""
 
 
 def _build_system_prompt(mode_rules: str) -> str:
@@ -213,7 +219,32 @@ def build_deck(session: Session, mode: Mode, lang: Lang) -> Deck:
         temperature=0.4,
     )
     content = response.choices[0].message.content or "{}"
-    return Deck.model_validate_json(content)
+    deck = Deck.model_validate_json(content)
+    return ensure_segment_anchors(deck, session.chunks)
+
+
+def _valid_block_ids(chunks: list[Chunk]) -> set[str]:
+    ids: set[str] = set()
+    for chunk in chunks:
+        ids.update(chunk.block_ids)
+    return ids
+
+
+def ensure_segment_anchors(deck: Deck, chunks: list[Chunk]) -> Deck:
+    """Ensure every segment has highlightable block IDs (all modes)."""
+    if not chunks:
+        return deck
+
+    valid = _valid_block_ids(chunks)
+    updated: list[Segment] = []
+    for i, seg in enumerate(deck.segments):
+        filtered = [aid for aid in seg.anchor_ids if aid in valid]
+        if not filtered:
+            chunk = chunks[i % len(chunks)]
+            filtered = list(chunk.block_ids)[:3]
+        updated.append(seg.model_copy(update={"anchor_ids": filtered}))
+
+    return deck.model_copy(update={"segments": updated})
 
 
 # === Free-text chat (Step 9) ===

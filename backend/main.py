@@ -5,7 +5,13 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from tutor.agent import answer_question, build_deck, build_flashcards, summarise_page
+from tutor.agent import (
+    answer_question,
+    build_deck,
+    build_flashcards,
+    ensure_segment_anchors,
+    summarise_page,
+)
 from tutor.llm import DEFAULT_CHAT_MODEL, get_client
 from tutor.models import (
     ChatRequest,
@@ -110,7 +116,7 @@ def post_mode(payload: ModeRequest) -> Deck:
         if not payload.regenerate:
             cached = get_deck(session, payload.mode, payload.lang)
             if cached is not None:
-                return cached
+                return ensure_segment_anchors(cached, session.chunks)
         deck = build_deck(session, payload.mode, payload.lang)
         put_deck(session, payload.mode, payload.lang, deck)
         return deck
