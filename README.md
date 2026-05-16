@@ -81,6 +81,9 @@ DOM node so it can resolve highlight commands later.
 #### Side panel → Content script (via background)
 
 ```ts
+// trigger extraction on the active tab (side panel "Activate on this page")
+{ type: "page:extract" }
+
 // highlight one or more blocks in the live page
 {
   type: "page:highlight",

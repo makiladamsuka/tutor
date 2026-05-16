@@ -5,11 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:ext": "next build && node scripts/post-build-ext.mjs",
+    "build:ext": "node scripts/build-content.mjs && node scripts/build-panel.mjs && node scripts/package-ext.mjs",
+    "build:ext:next": "node scripts/build-content.mjs && next build && node scripts/post-build-ext.mjs",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "@mozilla/readability": "^0.6.0",
     "next": "16.2.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -21,6 +23,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.25.12",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",

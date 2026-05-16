@@ -152,7 +152,13 @@ if (illegal.length > 0) {
   process.exit(1);
 }
 
-const required = ["manifest.json", "index.html", "background.js", "next"];
+const required = [
+  "manifest.json",
+  "index.html",
+  "background.js",
+  "content.js",
+  "next",
+];
 const missing = required.filter((name) => !existsSync(join(outDir, name)));
 if (missing.length > 0) {
   console.error("\nExtension build failed verification.");
