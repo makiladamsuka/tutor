@@ -10,6 +10,7 @@ through them.
 > **Full product plan + phasing:** [`../.cursor/plans/interactive-wiki-tutor_1e075354.plan.md`](../.cursor/plans/interactive-wiki-tutor_1e075354.plan.md)
 > **Canonical contract:** [`../README.md`](../README.md) — this file repeats
 > the frontend-relevant parts so you don't have to bounce between docs.
+> **Frontend build playbook (steps 1–13):** [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md)
 > **Concepts deep-dive:** [`CONCEPTS.md`](CONCEPTS.md) — the "why does it
 > work this way" companion to this spec (ID systems, the three channels per
 > segment, BP push vs pull, slide state machine in code).
@@ -237,27 +238,26 @@ The BP widget runs inside the side-panel iframe. Frontend responsibilities:
 
 ```
 frontend/
-├── public/                 # static assets (icons, manifest images)
+├── dist/                   # `npm run build` output — Load unpacked here
+├── public/                 # static assets copied into dist (SVG placeholders)
 ├── src/
-│   ├── panel/              # side-panel React app entry
-│   ├── content/            # content script (Readability + highlighting)
-│   ├── background/         # service worker (message relay)
-│   ├── shared/             # message types, API client, zod schemas
-│   └── components/         # SlideDeck, ChatBox, ModePicker, Notes, ...
-├── manifest.config.ts      # MV3 manifest (via @crxjs/vite-plugin)
+│   ├── sidepanel/          # MV3 side panel React entry + App.tsx
+│   ├── background/         # service worker (side panel open behavior)
+│   └── content/            # content script stub (Step 4 adds Readability)
+├── manifest.config.ts      # MV3 manifest (@crxjs/vite-plugin)
+├── vite.config.ts
 ├── package.json
+├── BUILD_PLAYBOOK.md       # step-by-step journal (this spec expands here)
 └── README.md               # this file
 ```
 
 Recommended stack (per [root README](../README.md)): **React + Vite +
 TypeScript + [@crxjs/vite-plugin](https://crxjs.dev/vite-plugin)** — one
 build pipeline produces the side panel, content script, and background
-worker as a single Chrome-loadable bundle.
+worker as a single Chrome-loadable bundle (**[`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) Step 1 implemented**).
 
-> The `create-next-app` boilerplate currently in this folder predates the
-> Chrome-extension decision. Replace it with the Vite + crxjs setup before
-> shipping anything user-facing — Next.js is the wrong tool for an MV3
-> bundle.
+> **Historical:** This folder previously used `create-next-app`; it has been
+> replaced by **Vite + crxjs** for MV3 (`npm run build` → **`dist/`**).
 
 ## Dependencies you'll need
 
@@ -277,13 +277,17 @@ Once the Vite + crxjs setup exists:
 ```bash
 cd frontend
 npm install
-npm run dev          # produces dist/, watches for changes
+npm run build          # produces dist/ — load this folder unpacked
+# optional hot reload during development:
+npm run dev
 ```
 
 In Chrome: `chrome://extensions` → toggle **Developer mode** → click **Load
-unpacked** → select `frontend/dist/`. The extension ID will be displayed;
+unpacked** → select **`frontend/dist/`**. The extension ID will be displayed;
 the backend's CORS already accepts any `chrome-extension://*` origin, so
 no further config is required.
+
+Reload the extension after each `npm run build` when not using `npm run dev`.
 
 The backend must be running separately:
 
@@ -300,8 +304,9 @@ sanity-check shapes before wiring them into the panel.
 - **Backend:** playbook **10/10** — `/session`, `/mode`, `/chat`, `/flashcards`.
   See [`../backend/README.md`](../backend/README.md) and
   [`../BACKEND_AND_FRONTEND_GUIDE.md`](../BACKEND_AND_FRONTEND_GUIDE.md).
-- **Frontend:** Next.js boilerplate in this folder; extension target is **Vite +
-  `@crxjs/vite-plugin`** per above. Not shipped as MV3 yet.
+- **Frontend:** **Step 1 done** — Vite + `@crxjs/vite-plugin`; `npm run build` →
+  **`dist/`** MV3 bundle with side panel + stub background + stub content script.
+  Follow [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) for Steps 2–13.
 
 ### Suggested first slice (smallest demoable thing)
 

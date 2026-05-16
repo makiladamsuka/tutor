@@ -1,0 +1,120 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #e8eaed;
+  background: #202124;
+}
+
+.panel-root {
+  padding: 16px;
+}
+
+.panel-root h1 {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.panel-subtitle {
+  margin: 0 0 16px;
+  color: #9aa0a6;
+}
+
+.panel-section {
+  margin-bottom: 16px;
+}
+
+.panel-heading {
+  margin: 0 0 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #bdc1c6;
+}
+
+.panel-button {
+  padding: 8px 14px;
+  font: inherit;
+  color: #e8eaed;
+  background: #3c4043;
+  border: 1px solid #5f6368;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.panel-button:hover:not(:disabled) {
+  background: #48494b;
+}
+
+.panel-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.panel-button--secondary {
+  margin-top: 8px;
+}
+
+.panel-status--pre {
+  white-space: pre-wrap;
+}
+
+.panel-status {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+}
+
+.panel-status--ok {
+  color: #81c995;
+}
+
+.panel-status--err {
+  color: #f28b82;
+}
+
+.panel-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #9aa0a6;
+}
+
+.panel-scrape-result {
+  margin-top: 8px;
+}
+
+.panel-block-preview {
+  margin: 8px 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.8125rem;
+  color: #bdc1c6;
+}
+
+.panel-block-id {
+  color: #8ab4f8;
+  font-family: ui-monospace, monospace;
+}
+
+.panel-details {
+  margin-top: 8px;
+  border-top: 1px solid #3c4043;
+  padding-top: 8px;
+}
+
+.panel-details-summary {
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: #9aa0a6;
+  margin-bottom: 8px;
+}
