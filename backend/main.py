@@ -1,10 +1,14 @@
 import os
+from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from tutor.agent import summarise_page
 from tutor.llm import DEFAULT_CHAT_MODEL, get_client
+from tutor.models import SessionRequest, SessionResponse
+from tutor.store import Session, put
 
 load_dotenv()
 
@@ -40,3 +44,30 @@ def test_openai():
         max_tokens=20,
     )
     return {"reply": response.choices[0].message.content}
+
+
+@app.post("/session", response_model=SessionResponse)
+def create_session(payload: SessionRequest) -> SessionResponse:
+    if not payload.blocks:
+        raise HTTPException(
+            status_code=400,
+            detail="blocks must contain at least one item",
+        )
+
+    session_id = uuid4().hex
+    try:
+        header = summarise_page(payload.title, payload.blocks)
+    except RuntimeError as exc:
+        # `get_client()` raises RuntimeError when OPENAI_API_KEY is missing.
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    put(
+        Session(
+            session_id=session_id,
+            title=payload.title,
+            url=payload.url,
+            blocks=list(payload.blocks),
+            header_summary=header,
+        )
+    )
+    return SessionResponse(session_id=session_id, header_summary=header)
