@@ -8,6 +8,19 @@ this way") — the parts that confuse you the first time you stare at a
 If you're picking up the frontend cold, read [`README.md`](README.md)
 first, then come back here.
 
+## 0. Team boundaries (who owns what)
+
+| Owner | Owns | Wire format |
+| --- | --- | --- |
+| **Member 1 (Systems)** | Content script, background relay, DOM scrape + `data-tutor-id`, highlight + scroll | `page:extracted`, `page:highlight`, `page:clearHighlights` |
+| **Ruwan (panel UI)** | React side panel, avatar, slides, Knowledge Board, `fetch` to backend | `POST /session`, `/mode`, `/chat`, `/flashcards`; StudyCard in Zustand |
+
+Member 1's scrape output is **`blocks`** for `POST /session` — not the Knowledge Board
+StudyCard shape. See [`../PLAN.md`](../PLAN.md).
+
+Optional later: `mouseup` text selection is **not** the primary scrape path; full-page
+Readability blocks feed the backend.
+
 ## 1. Three ID systems, three different lifetimes
 
 A `/mode` response carries three layers of identifiers that look similar

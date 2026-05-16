@@ -194,6 +194,22 @@ Array<{ q: string; a: string; source_chunk_id: string }>
 
 Liveness probe; `{ ok: true }`.
 
+### UI store vs backend naming
+
+Ruwan's `useCardStore` uses `summary` / `simple` and `EN` / `SI` / `TA`. Map at the
+`fetch` boundary when calling the API:
+
+| UI | Backend `mode` or `lang` |
+| --- | --- |
+| `summary` | `summarise` |
+| `simple` | `explain_simply` |
+| `EN` | `en` |
+| `SI` | `si` |
+| `TA` | `ta` |
+
+`POST /flashcards` returns `{ q, a, source_chunk_id }` — not the Knowledge Board
+StudyCard shape; map in the panel UI if needed.
+
 ## Slide deck state machine
 
 The side panel owns this state. The backend is not involved after the
@@ -233,31 +249,45 @@ The BP widget runs inside the side-panel iframe. Frontend responsibilities:
   a separate backend webhook (`POST /bey/llm`) that intentionally does not
   emit highlights, to keep the MVP simple.
 
-## Repository layout (target)
+## Repository layout
+
+### Current (shipped side panel)
 
 ```
 frontend/
-├── public/                 # static assets (icons, manifest images)
+├── public/
+│   ├── manifest.json       # MV3 manifest (copied to out/ on build)
+│   ├── background.js         # service worker (panel open; relay TBD)
+│   └── content.js            # content script prototype (Readability TBD)
+├── scripts/
+│   └── post-build-ext.mjs    # renames _next → next (Chrome forbids _*)
 ├── src/
-│   ├── panel/              # side-panel React app entry
-│   ├── content/            # content script (Readability + highlighting)
-│   ├── background/         # service worker (message relay)
-│   ├── shared/             # message types, API client, zod schemas
-│   └── components/         # SlideDeck, ChatBox, ModePicker, Notes, ...
-├── manifest.config.ts      # MV3 manifest (via @crxjs/vite-plugin)
+│   ├── app/                  # Next.js App Router → side panel UI
+│   └── components/           # Ruwan's UI (avatar, Knowledge Board, …)
 ├── package.json
-└── README.md               # this file
+└── README.md
 ```
 
-Recommended stack (per [root README](../README.md)): **React + Vite +
-TypeScript + [@crxjs/vite-plugin](https://crxjs.dev/vite-plugin)** — one
-build pipeline produces the side panel, content script, and background
-worker as a single Chrome-loadable bundle.
+Build output: **`frontend/out/`** — load this folder in Chrome (not `dist/`).
 
-> The `create-next-app` boilerplate currently in this folder predates the
-> Chrome-extension decision. Replace it with the Vite + crxjs setup before
-> shipping anything user-facing — Next.js is the wrong tool for an MV3
-> bundle.
+> **Deprecated prototype:** `SCRAPED_CONTENT` in `public/content.js` and
+> `ExtensionListener.tsx` — use `page:extracted` per [root README](../README.md).
+
+### Target (optional future migration)
+
+```
+frontend/
+├── src/
+│   ├── content/              # content script (Readability + highlighting)
+│   ├── background/         # service worker (message relay)
+│   ├── shared/             # message types, API client, zod schemas
+│   └── components/         # SlideDeck, ChatBox, ModePicker, Notes, …
+├── manifest.config.ts      # MV3 manifest (via @crxjs/vite-plugin)
+└── …
+```
+
+**Current stack:** Next.js 16 with `output: 'export'` + `npm run build:ext`.
+**Target stack:** Vite + [@crxjs/vite-plugin](https://crxjs.dev/vite-plugin) — migrate when the team prioritises it.
 
 ## Dependencies you'll need
 
@@ -272,18 +302,26 @@ worker as a single Chrome-loadable bundle.
 
 ## Local dev
 
-Once the Vite + crxjs setup exists:
+### Chrome extension (side panel)
 
 ```bash
 cd frontend
 npm install
-npm run dev          # produces dist/, watches for changes
+npm run build:ext    # next build + post-build (out/, _next → next)
 ```
 
-In Chrome: `chrome://extensions` → toggle **Developer mode** → click **Load
-unpacked** → select `frontend/dist/`. The extension ID will be displayed;
-the backend's CORS already accepts any `chrome-extension://*` origin, so
-no further config is required.
+In Chrome: `chrome://extensions` → **Developer mode** → **Load unpacked** →
+select **`frontend/out/`**. Re-run `build:ext` after code changes, then click
+**Reload** on the extension card.
+
+[`scripts/post-build-ext.mjs`](scripts/post-build-ext.mjs) is required because
+Chrome rejects folders whose names start with `_` (Next.js default `_next`).
+
+### Web-only UI preview (optional)
+
+```bash
+npm run dev          # http://localhost:3000 — not the extension bundle
+```
 
 The backend must be running separately:
 
@@ -300,14 +338,16 @@ sanity-check shapes before wiring them into the panel.
 - **Backend:** playbook **10/10** — `/session`, `/mode`, `/chat`, `/flashcards`.
   See [`../backend/README.md`](../backend/README.md) and
   [`../BACKEND_AND_FRONTEND_GUIDE.md`](../BACKEND_AND_FRONTEND_GUIDE.md).
-- **Frontend:** Next.js boilerplate in this folder; extension target is **Vite +
-  `@crxjs/vite-plugin`** per above. Not shipped as MV3 yet.
+- **Frontend extension:** **Step 1 done** — MV3 manifest + side panel loads from
+  `frontend/out/` via `npm run build:ext`. **Next (Member 1):** content script
+  (Readability + `page:extracted`), background message relay, `page:highlight`.
+  Ruwan's full UI lives in `src/components/` (not yet wired into the panel page).
 
 ### Suggested first slice (smallest demoable thing)
 
 Build in this order so each step produces something visible:
 
-1. **Manifest + empty side panel** — opens, shows "Hello".
+1. ~~**Manifest + empty side panel**~~ — **done** (opens placeholder UI).
 2. **Content script extraction** — logs the `blocks` array to the console
    when activated.
 3. **Wire `POST /session`** — side panel calls it, displays
