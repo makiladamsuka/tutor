@@ -222,13 +222,26 @@ cd frontend && npm run build && npm run lint
 
 ## Step 8 — Slide navigation state machine (without TTS)
 
-**What:** Implement **Speaking / Held / Resume** from root [`README.md`](../README.md): Prev/Next pause logical “playback” and change slide; Resume speaks current segment’s `say` (for now **log** or **alert** `say`).
+**What:** One slide at a time with **Prev / Next / Resume** and **Speaking / Held** state ([`deckPlayback.ts`](src/sidepanel/deckPlayback.ts), [`DeckPlayer.tsx`](src/sidepanel/DeckPlayer.tsx)). `say` logged to console until Step 10.
 
 **Do:**
 
-- **`currentSegmentIndex`**; optional timer stub for auto-advance until BP exists.
+- `segmentIndex` + `playbackState`; reset when deck loads or clears.
+- Prev/Next → **Held**, change slide, `avatar.pause()` stub; Resume → **Speaking**, log current `say`.
+- No auto-advance until Step 10 `audio_complete`.
 
-**Done when:** You can step through segments manually; Prev/Next doesn’t skip logic incorrectly.
+**Verify:**
+
+| Check | Expected |
+|-------|----------|
+| Load Teach deck | Slide 1 of N, status **Speaking**, console `say` for s1 |
+| Next | Slide 2, **Held**, no new `say` until Resume |
+| Resume | **Speaking**, console `say` for current slide |
+| Prev at slide 1 | Button disabled |
+| Next at last slide | Button disabled |
+| New mode | Index resets to 1, fresh deck |
+
+**Done when:** Manual segment navigation matches README state machine; build + lint pass.
 
 ---
 

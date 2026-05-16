@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { getHealth, postMode, postSession } from "../shared/api";
 import type { Deck, Mode, SessionRequest } from "../shared/apiTypes";
-import DeckView from "./DeckView";
+import DeckPlayer from "./DeckPlayer";
+import {
+  pauseAvatar,
+  speakSegment,
+  type PlaybackState,
+} from "./deckPlayback";
 import type { PageExtractedPayload } from "../shared/messages";
 import {
   onBackgroundMessage,
@@ -81,12 +86,17 @@ export default function App() {
   const [deck, setDeck] = useState<Deck | null>(null);
   const [loadingMode, setLoadingMode] = useState<Mode | null>(null);
   const [modeError, setModeError] = useState<string | null>(null);
+  const [segmentIndex, setSegmentIndex] = useState(0);
+  const [playbackState, setPlaybackState] =
+    useState<PlaybackState>("speaking");
 
   const clearDeck = useCallback(() => {
     setDeck(null);
     setActiveMode(null);
     setModeError(null);
     setLoadingMode(null);
+    setSegmentIndex(0);
+    setPlaybackState("speaking");
   }, []);
 
   const requestContentStatus = useCallback(async () => {
@@ -215,6 +225,61 @@ export default function App() {
     }
   }
 
+  function clampedSegmentIndex(forDeck: Deck): number {
+    const n = forDeck.segments.length;
+    if (n === 0) {
+      return 0;
+    }
+    return Math.min(Math.max(0, segmentIndex), n - 1);
+  }
+
+  function handleDeckPrev() {
+    if (!deck || deck.segments.length === 0) {
+      return;
+    }
+    const idx = clampedSegmentIndex(deck);
+    if (idx <= 0) {
+      return;
+    }
+    if (playbackState === "speaking") {
+      pauseAvatar();
+    }
+    const nextIndex = idx - 1;
+    setSegmentIndex(nextIndex);
+    setPlaybackState("held");
+    console.info("[tutor] anchor_ids:", deck.segments[nextIndex].anchor_ids);
+  }
+
+  function handleDeckNext() {
+    if (!deck || deck.segments.length === 0) {
+      return;
+    }
+    const idx = clampedSegmentIndex(deck);
+    if (idx >= deck.segments.length - 1) {
+      return;
+    }
+    if (playbackState === "speaking") {
+      pauseAvatar();
+    }
+    const nextIndex = idx + 1;
+    setSegmentIndex(nextIndex);
+    setPlaybackState("held");
+    console.info("[tutor] anchor_ids:", deck.segments[nextIndex].anchor_ids);
+  }
+
+  function handleDeckResume() {
+    if (!deck || playbackState !== "held") {
+      return;
+    }
+    const idx = clampedSegmentIndex(deck);
+    const segment = deck.segments[idx];
+    if (!segment) {
+      return;
+    }
+    setPlaybackState("speaking");
+    speakSegment(segment);
+  }
+
   async function handleMode(mode: Mode) {
     if (!sessionId) {
       return;
@@ -222,14 +287,24 @@ export default function App() {
 
     setModeError(null);
     setLoadingMode(mode);
+    setDeck(null);
+    setActiveMode(null);
     try {
       const result = await postMode({
         session_id: sessionId,
         mode,
         lang: "en",
       });
-      setDeck(result);
+      const segments = result.segments ?? [];
+      if (segments.length === 0) {
+        setModeError("Mode returned an empty deck. Try again.");
+        return;
+      }
+      setSegmentIndex(0);
+      setPlaybackState("speaking");
       setActiveMode(mode);
+      setDeck(result);
+      speakSegment(segments[0]);
     } catch (err) {
       setDeck(null);
       setActiveMode(null);
@@ -254,11 +329,16 @@ export default function App() {
   const previewBlocks = extracted?.blocks.slice(0, 3) ?? [];
   const canStartSession =
     Boolean(extracted && extracted.blocks.length > 0) && !startingSession;
+  const deckSegmentCount = deck?.segments.length ?? 0;
+  const safeSegmentIndex =
+    deckSegmentCount === 0
+      ? 0
+      : Math.min(segmentIndex, deckSegmentCount - 1);
 
   return (
     <main className="panel-root">
       <h1>Tutor</h1>
-      <p className="panel-subtitle">Step 7: scrape + session + modes</p>
+      <p className="panel-subtitle">Step 8: scrape + session + deck navigation</p>
 
       <section className="panel-section">
         <h2 className="panel-heading">Scrape</h2>
@@ -355,9 +435,10 @@ export default function App() {
             );
           })}
         </div>
-        {loadingMode && (
+        {loadingMode && !(deck && activeMode === loadingMode) && (
           <p className="panel-hint">
-            Generating deck ({modeLabel(loadingMode)})…
+            Generating deck ({modeLabel(loadingMode)})… Large pages can take
+            up to a minute.
           </p>
         )}
         {modeError && (
@@ -365,8 +446,16 @@ export default function App() {
             {modeError}
           </p>
         )}
-        {deck && activeMode && (
-          <DeckView deck={deck} mode={activeMode} />
+        {deck && activeMode && deckSegmentCount > 0 && (
+          <DeckPlayer
+            deck={deck}
+            mode={activeMode}
+            segmentIndex={safeSegmentIndex}
+            playbackState={playbackState}
+            onPrev={handleDeckPrev}
+            onNext={handleDeckNext}
+            onResume={handleDeckResume}
+          />
         )}
       </section>
 

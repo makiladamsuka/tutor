@@ -212,8 +212,43 @@ body {
 }
 
 .panel-deck-segment-id {
-  margin: 6px 0 0;
   font-family: ui-monospace, monospace;
   font-size: 0.6875rem;
   color: #9aa0a6;
+}
+
+.panel-deck-progress {
+  margin: 0 0 4px;
+  font-size: 0.8125rem;
+  color: #bdc1c6;
+}
+
+.panel-deck-playback {
+  margin: 0 0 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8ab4f8;
+}
+
+.panel-deck-segment--current {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #3c4043;
+}
+
+.panel-deck-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.panel-button--nav {
+  flex: 1 1 auto;
+  min-width: 4.5rem;
+}
+
+.panel-deck-nav-hint {
+  margin-top: 8px;
 }
