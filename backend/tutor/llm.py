@@ -28,8 +28,8 @@ def get_client() -> OpenAI:
     if _client is None:
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError(
-                "OPENAI_API_KEY is not set. Create backend/.env from .env.example "
-                "and paste your key."
+                "OPENAI_API_KEY is not set. Create backend/.env from "
+                ".env.example and paste your key."
             )
         _client = OpenAI()
     return _client
