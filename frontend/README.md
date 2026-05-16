@@ -10,6 +10,7 @@ through them.
 > **Full product plan + phasing:** [`../.cursor/plans/interactive-wiki-tutor_1e075354.plan.md`](../.cursor/plans/interactive-wiki-tutor_1e075354.plan.md)
 > **Canonical contract:** [`../README.md`](../README.md) — this file repeats
 > the frontend-relevant parts so you don't have to bounce between docs.
+> **Setup (npm, build, Chrome extension):** [`SETUP.md`](SETUP.md)
 > **Frontend build playbook (steps 1–13):** [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md)
 > **Concepts deep-dive:** [`CONCEPTS.md`](CONCEPTS.md) — the "why does it
 > work this way" companion to this spec (ID systems, the three channels per
