@@ -79,40 +79,41 @@ uv run uvicorn main:app --reload
 
 ### Current state vs target
 
-| Topic | Today (`frontend/`) | Target (per [`frontend/README.md`](frontend/README.md)) |
-| ----- | ------------------- | ------------------------------------------------------- |
-| Tooling | **Next.js 16** (`next dev` / `next build`) | **Vite + React + TypeScript + `@crxjs/vite-plugin`** |
-| Purpose | App Router demo + placeholder `BeyondPresenceVideo` | **Chrome MV3 extension**: content script + background + side panel |
-| Shipping | Not a loadable extension bundle | **`dist/`** loaded via **Load unpacked** |
+| Topic | Today (`frontend/`) | Target (optional) |
+| ----- | ------------------- | ----------------- |
+| Tooling | **Next.js 16** static export + [`scripts/post-build-ext.mjs`](frontend/scripts/post-build-ext.mjs) | **Vite + `@crxjs/vite-plugin`** |
+| Purpose | **Chrome MV3 side panel** (placeholder UI) + `public/` workers | Full tutor UI + Readability content script + relay |
+| Shipping | **`frontend/out/`** via **Load unpacked** | Same; may move to `dist/` if migrating to crxjs |
+| Content script | Stub in `public/content.js`; **not** in manifest yet | Readability → `page:extracted` per [`README.md`](README.md) |
+| Background | Opens side panel; **message relay not implemented** | Relay `page:extracted` / `page:highlight` |
 
-The Next.js project is **boilerplate from before** the extension architecture was chosen. You can **develop UI prototypes** with it, but **shipping** the tutor requires migrating to **Vite + crxjs** (one build for panel + workers + content script).
+Member 1 responsibilities and scrape contract: [`PLAN.md`](PLAN.md).
 
-### Build commands (today — Next.js in `frontend/`)
+### Build commands (today — Next.js extension in `frontend/`)
 
 From the repository root:
 
 ```bash
 cd frontend
 npm install
-npm run dev      # http://localhost:3000 — local web dev
-npm run build    # production Next.js build
-npm run start    # run production server after build
-npm run lint     # eslint
+npm run build:ext   # → frontend/out/ (Chrome-loadable; renames _next → next)
+npm run dev         # http://localhost:3000 — web preview only, not the extension
+npm run lint
 ```
 
-These commands apply to the **existing** `package.json`. They do **not** yet produce a **`manifest.json`** Chrome extension unless you add that tooling yourself.
+Then in Chrome: **`chrome://extensions`** → **Developer mode** → **Load unpacked** → select **`frontend/out/`**.
 
 ### Target workflow (after Vite + crxjs migration)
 
-When the repo matches the layout in **`frontend/README.md`**:
+If the repo migrates per **`frontend/README.md`**:
 
 ```bash
 cd frontend
 npm install
-npm run dev      # watch → outputs extension bundle (e.g. dist/)
+npm run dev      # watch → extension bundle (e.g. dist/)
 ```
 
-Then in Chrome: **`chrome://extensions`** → **Developer mode** → **Load unpacked** → select **`frontend/dist`** (or whatever folder crxjs emits).
+Load whichever output folder the crxjs config emits.
 
 Keep the backend running separately:
 
@@ -124,8 +125,8 @@ cd backend && uv run uvicorn main:app --reload
 
 Use this as an implementation order (same as **`frontend/README.md`** “Suggested first slice”):
 
-1. **MV3 manifest + side panel entry** that opens your UI.
-2. **Content script**: Readability extraction → **`blocks`** with **`b*`** ids → message **`page:extracted`** via background.
+1. ~~**MV3 manifest + side panel entry**~~ — **done** (`frontend/out/`).
+2. **Content script**: Readability extraction → **`blocks`** with **`b*`** ids → message **`page:extracted`** via background (**Member 1 — next**).
 3. **`POST /session`** — store **`session_id`**, show **`header_summary`**.
 4. **Mode UI + `POST /mode`** — render deck segments (slides); wire **`anchor_ids`** to **`page:highlight`**.
 5. **Slide deck state machine** — pause / prev / next / resume + BP **`say`** (see root **`README.md`**).
@@ -142,6 +143,7 @@ Message shapes (`page:extracted`, `page:highlight`, etc.) are specified in **`RE
 | [`backend/README.md`](backend/README.md) | Backend playbook (10/10), verification notes |
 | [`frontend/README.md`](frontend/README.md) | Extension architecture, dependencies, migration notes |
 | [`frontend/CONCEPTS.md`](frontend/CONCEPTS.md) | `b*` / `s*` / `c*` ids, three channels per segment, BP push vs webhook |
+| [`PLAN.md`](PLAN.md) | Member 1 (Systems): scrape, relay, scroll-to-quote; backend `blocks` format |
 
 ---
 

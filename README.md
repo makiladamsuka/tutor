@@ -15,10 +15,11 @@ like a real lecture.
   numpy for in-memory retrieval. All endpoints are plain HTTP; the avatar's
   TTS is the streaming experience. See [`backend/README.md`](backend/README.md)
   for the build playbook.
-- [`frontend/`](frontend/) — React + Vite + TypeScript side-panel UI. Same
-  bundle ships inside the Chrome MV3 extension.
-- `extension/` (planned) — MV3 manifest, background service worker, content
-  script. Built alongside the frontend via `@crxjs/vite-plugin`.
+- [`frontend/`](frontend/) — Next.js side-panel UI (static export). MV3 assets
+  live in [`frontend/public/`](frontend/public/) (`manifest.json`, `background.js`,
+  `content.js`). Build with `npm run build:ext` → load **`frontend/out/`** in Chrome.
+  Optional future migration to Vite + `@crxjs/vite-plugin` — see
+  [`frontend/README.md`](frontend/README.md).
 
 ## High-level architecture
 
@@ -247,7 +248,15 @@ phasing live in
 ## Status
 
 Backend playbook is **10/10** (`/session`, `/mode`, `/chat`, `/flashcards`).
-See [`backend/README.md`](backend/README.md). Frontend: Next.js boilerplate
-in [`frontend/`](frontend/) — migrate to Vite + `@crxjs/vite-plugin` per
-[`frontend/README.md`](frontend/README.md); overview in
-[`BACKEND_AND_FRONTEND_GUIDE.md`](BACKEND_AND_FRONTEND_GUIDE.md).
+See [`backend/README.md`](backend/README.md).
+
+**Frontend extension:**
+
+- **Done:** MV3 side panel MVP — `npm run build:ext` → load `frontend/out/`.
+- **Next (Member 1):** content script (Readability + `page:extracted`), background
+  message relay, `page:highlight` / scroll-to-quote.
+- **Not yet:** background relay between content script and panel (architecture
+  below assumes it; see [`frontend/public/background.js`](frontend/public/background.js)).
+
+Overview: [`BACKEND_AND_FRONTEND_GUIDE.md`](BACKEND_AND_FRONTEND_GUIDE.md).
+Member 1 personal plan: [`PLAN.md`](PLAN.md).
