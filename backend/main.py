@@ -1,7 +1,9 @@
 import os
+from pathlib import Path
 from uuid import uuid4
 
 from dotenv import load_dotenv
+from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -33,6 +35,10 @@ load_dotenv()
 
 app = FastAPI(title="Tutor Backend")
 app.include_router(avatar_router)
+
+_static_dir = Path(__file__).resolve().parent / "static"
+if _static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 # Allow the Chrome extension (any extension ID) and local dev frontends.
 # Using a regex so we don't have to hardcode the extension ID, which

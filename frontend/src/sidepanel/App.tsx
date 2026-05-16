@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getHealth, postMode, postSession } from "../shared/api";
 import type { Deck, Mode, SessionRequest } from "../shared/apiTypes";
 import AvatarPanel from "./AvatarPanel";
@@ -91,6 +91,11 @@ export default function App() {
   const [segmentIndex, setSegmentIndex] = useState(0);
   const [playbackState, setPlaybackState] =
     useState<PlaybackState>("speaking");
+
+  const deckRef = useRef(deck);
+  const segmentIndexRef = useRef(segmentIndex);
+  deckRef.current = deck;
+  segmentIndexRef.current = segmentIndex;
 
   const clearDeck = useCallback(() => {
     setDeck(null);
@@ -283,17 +288,21 @@ export default function App() {
     speakSegment(segment);
   }
 
-  function handleDeckAutoAdvance() {
-    if (!deck || deck.segments.length === 0) {
+  const handleDeckAutoAdvance = useCallback(() => {
+    const currentDeck = deckRef.current;
+    if (!currentDeck?.segments.length) {
       return;
     }
-    const idx = clampedSegmentIndex(deck);
-    if (idx >= deck.segments.length - 1) {
+    const n = currentDeck.segments.length;
+    const idx = Math.min(Math.max(0, segmentIndexRef.current), n - 1);
+    if (idx >= n - 1) {
       return;
     }
-    setSegmentIndex(idx + 1);
+    const nextIndex = idx + 1;
+    setSegmentIndex(nextIndex);
     setPlaybackState("speaking");
-  }
+    console.info("[tutor] auto-advance → segment", nextIndex + 1, "/", n);
+  }, []);
 
   async function handleMode(mode: Mode) {
     if (!sessionId) {

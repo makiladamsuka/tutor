@@ -10,7 +10,7 @@ import {
   useTracks,
   useVoiceAssistant,
 } from "@livekit/components-react";
-import { ConnectionState, Track } from "livekit-client";
+import { ConnectionState, RoomEvent, Track, type Room } from "livekit-client";
 import "@livekit/components-styles";
 import { createCall, getAvatars, type CreateCallResponse } from "../shared/api";
 import type { AvatarListItem, Deck } from "../shared/apiTypes";
@@ -19,6 +19,7 @@ import {
   registerAvatarBridge,
   type PlaybackState,
 } from "./deckPlayback";
+import AvatarPhotoCard from "./AvatarPhotoCard";
 
 ensureCryptoRandomUUID();
 
@@ -84,13 +85,6 @@ function deckKey(deck: Deck | null): string {
   return `${deck.title}|${deck.segments.map((s) => s.id).join(",")}`;
 }
 
-function nextAvatarId(options: AvatarListItem[], current: string): string {
-  if (options.length === 0) return current;
-  const index = options.findIndex((a) => a.id === current);
-  const nextIndex = index < 0 ? 0 : (index + 1) % options.length;
-  return options[nextIndex].id;
-}
-
 function AvatarStage() {
   const { videoTrack: agentVideoTrack } = useVoiceAssistant();
   const allVideoTracks = useTracks(
@@ -111,34 +105,15 @@ function AvatarStage() {
   );
 }
 
-type RoomBridgeProps = {
-  deck: Deck;
-  segmentIndex: number;
-  playbackState: PlaybackState;
-  onAutoAdvance: () => void;
-};
-
-function RoomBridge({
-  deck,
-  segmentIndex,
-  playbackState,
-  onAutoAdvance,
-}: RoomBridgeProps) {
+/** Register SAY bridge for deckPlayback.speakSegment (Resume, etc.). */
+function AvatarBridgeRegister() {
   const room = useRoomContext();
-  const { state: agentState } = useVoiceAssistant();
-  const wasSpeakingRef = useRef(false);
-  const segmentWhenSpeechStartedRef = useRef<number | null>(null);
-  const prevSegmentRef = useRef<number | null>(null);
-  const deckKeyRef = useRef("");
-
-  const key = deckKey(deck);
 
   useEffect(() => {
     const sendSay = (text: string) => {
       if (room.state !== ConnectionState.Connected) return;
-      const message = `SAY: ${text}`;
       void room.localParticipant
-        .sendText(message, { topic: "lk.chat" })
+        .sendText(`SAY: ${text}`, { topic: "lk.chat" })
         .catch((err: unknown) =>
           console.warn("[tutor] avatar sendText failed:", err),
         );
@@ -151,33 +126,135 @@ function RoomBridge({
     return () => registerAvatarBridge(null);
   }, [room]);
 
+  return null;
+}
+
+const MIN_SPEECH_MS = 500;
+const ADVANCE_COOLDOWN_MS = 400;
+
+/** Bey avatars may not set voice-assistant state to "speaking"; also watch LiveKit speakers. */
+function useAgentSpeaking(room: Room, voiceAssistantState: string | undefined): boolean {
+  const [remoteSpeaking, setRemoteSpeaking] = useState(false);
+
   useEffect(() => {
-    const speaking = agentState === "speaking";
-    if (speaking && !wasSpeakingRef.current) {
-      segmentWhenSpeechStartedRef.current = segmentIndex;
+    if (room.state !== ConnectionState.Connected) {
+      setRemoteSpeaking(false);
+      return;
     }
-    if (!speaking && wasSpeakingRef.current) {
+
+    const update = () => {
+      let speaking = false;
+      for (const participant of room.remoteParticipants.values()) {
+        if (participant.isSpeaking) {
+          speaking = true;
+          break;
+        }
+      }
+      setRemoteSpeaking(speaking);
+    };
+
+    room.on(RoomEvent.ActiveSpeakersChanged, update);
+    room.on(RoomEvent.ParticipantConnected, update);
+    room.on(RoomEvent.ParticipantDisconnected, update);
+    update();
+
+    return () => {
+      room.off(RoomEvent.ActiveSpeakersChanged, update);
+      room.off(RoomEvent.ParticipantConnected, update);
+      room.off(RoomEvent.ParticipantDisconnected, update);
+    };
+  }, [room, room.state]);
+
+  return voiceAssistantState === "speaking" || remoteSpeaking;
+}
+
+/**
+ * Advance one slide only after the tutor finishes reading the current segment.
+ */
+function AutoAdvanceOnSpeechEnd({
+  deck,
+  segmentIndex,
+  playbackState,
+  onAutoAdvance,
+}: {
+  deck: Deck;
+  segmentIndex: number;
+  playbackState: PlaybackState;
+  onAutoAdvance: () => void;
+}) {
+  const room = useRoomContext();
+  const { state: agentState } = useVoiceAssistant();
+  const agentSpeaking = useAgentSpeaking(room, agentState);
+
+  const wasSpeakingRef = useRef(false);
+  const segmentWhenSpeechStartedRef = useRef<number | null>(null);
+  const speechStartedAtRef = useRef<number | null>(null);
+  const advanceCooldownUntilRef = useRef(0);
+  const segmentIndexRef = useRef(segmentIndex);
+  const playbackStateRef = useRef(playbackState);
+
+  segmentIndexRef.current = segmentIndex;
+  playbackStateRef.current = playbackState;
+
+  useEffect(() => {
+    const now = Date.now();
+    if (now < advanceCooldownUntilRef.current) {
+      wasSpeakingRef.current = agentSpeaking;
+      return;
+    }
+
+    if (agentSpeaking && !wasSpeakingRef.current) {
+      segmentWhenSpeechStartedRef.current = segmentIndexRef.current;
+      speechStartedAtRef.current = now;
+    }
+
+    if (!agentSpeaking && wasSpeakingRef.current) {
+      const spokeMs =
+        speechStartedAtRef.current != null
+          ? now - speechStartedAtRef.current
+          : 0;
       const startedAt = segmentWhenSpeechStartedRef.current;
+      const idx = segmentIndexRef.current;
       const total = deck.segments.length;
+
       if (
-        playbackState === "speaking" &&
+        spokeMs >= MIN_SPEECH_MS &&
+        playbackStateRef.current === "speaking" &&
         total > 0 &&
         startedAt !== null &&
-        startedAt === segmentIndex &&
-        segmentIndex < total - 1
+        startedAt === idx &&
+        idx < total - 1
       ) {
+        advanceCooldownUntilRef.current = now + ADVANCE_COOLDOWN_MS;
         onAutoAdvance();
       }
+
       segmentWhenSpeechStartedRef.current = null;
+      speechStartedAtRef.current = null;
     }
-    wasSpeakingRef.current = speaking;
-  }, [
-    agentState,
-    deck.segments.length,
-    onAutoAdvance,
-    playbackState,
-    segmentIndex,
-  ]);
+
+    wasSpeakingRef.current = agentSpeaking;
+  }, [agentSpeaking, deck.segments.length, onAutoAdvance]);
+
+  return null;
+}
+
+/**
+ * Push segment `say` via SAY: when the active slide changes.
+ * Segment 0 is skipped on first connect (Bey speaks it as the call greeting).
+ */
+function SegmentSpeechSync({
+  deck,
+  segmentIndex,
+}: {
+  deck: Deck;
+  segmentIndex: number;
+}) {
+  const room = useRoomContext();
+  const prevSegmentRef = useRef<number | null>(null);
+  const deckKeyRef = useRef("");
+
+  const key = deckKey(deck);
 
   useEffect(() => {
     if (room.state !== ConnectionState.Connected) {
@@ -195,25 +272,29 @@ function RoomBridge({
       prevSegmentRef.current = null;
     }
 
-    if (playbackState !== "speaking") return;
-
     const clamped = Math.min(
       Math.max(segmentIndex, 0),
       deck.segments.length - 1,
     );
-    const say = deck.segments[clamped].say.trim();
-    if (!say) return;
+    if (!deck.segments[clamped].say.trim()) return;
 
     const sendForIndex = (idx: number) => {
       const text = deck.segments[idx].say.trim();
-      if (!text || idx === 0) return;
-      void room.localParticipant.sendText(`SAY: ${text}`, {
-        topic: "lk.chat",
-      });
+      if (!text) return;
+      void room.localParticipant
+        .sendText(`SAY: ${text}`, { topic: "lk.chat" })
+        .catch((err: unknown) =>
+          console.warn("[tutor] avatar SAY segment failed:", err),
+        );
     };
 
     if (prevSegmentRef.current === null) {
+      if (clamped === 0) {
+        prevSegmentRef.current = 0;
+        return;
+      }
       prevSegmentRef.current = clamped;
+      sendForIndex(clamped);
       return;
     }
 
@@ -221,9 +302,37 @@ function RoomBridge({
 
     prevSegmentRef.current = clamped;
     sendForIndex(clamped);
-  }, [deck, key, playbackState, room, segmentIndex]);
+  }, [deck, key, room, segmentIndex]);
 
-  return <AvatarStage />;
+  return null;
+}
+
+type RoomBridgeProps = {
+  deck: Deck;
+  segmentIndex: number;
+  playbackState: PlaybackState;
+  onAutoAdvance: () => void;
+};
+
+function RoomBridge({
+  deck,
+  segmentIndex,
+  playbackState,
+  onAutoAdvance,
+}: RoomBridgeProps) {
+  return (
+    <>
+      <AvatarBridgeRegister />
+      <AutoAdvanceOnSpeechEnd
+        deck={deck}
+        segmentIndex={segmentIndex}
+        playbackState={playbackState}
+        onAutoAdvance={onAutoAdvance}
+      />
+      <SegmentSpeechSync deck={deck} segmentIndex={segmentIndex} />
+      <AvatarStage />
+    </>
+  );
 }
 
 type AvatarPanelProps = {
@@ -244,10 +353,14 @@ export default function AvatarPanel({
   const [creds, setCreds] = useState<CreateCallResponse | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [avatarOptions, setAvatarOptions] = useState<AvatarListItem[]>([]);
-  const [selectedAvatarId, setSelectedAvatarId] = useState("");
+  /** Set only after the learner picks a tutor photo — then LiveKit connects. */
+  const [confirmedAvatarId, setConfirmedAvatarId] = useState<string | null>(
+    null,
+  );
   const [avatarsLoading, setAvatarsLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const activeDeckKeyRef = useRef<string>("");
+  const deckKeyForReset = deckKey(deck);
 
   const loadAvatarCatalog = useCallback(() => {
     setAvatarsLoading(true);
@@ -255,19 +368,12 @@ export default function AvatarPanel({
     return getAvatars()
       .then((data) => {
         setAvatarOptions(data.avatars);
-        const stored = readStoredAvatarId();
-        const pick =
-          stored && data.avatars.some((a) => a.id === stored)
-            ? stored
-            : data.default_id;
-        setSelectedAvatarId(pick);
       })
       .catch((err: unknown) => {
         const message =
           err instanceof Error ? err.message : String(err);
         setCatalogError(message);
         setAvatarOptions([]);
-        setSelectedAvatarId("");
       })
       .finally(() => {
         setAvatarsLoading(false);
@@ -278,45 +384,49 @@ export default function AvatarPanel({
     void loadAvatarCatalog();
   }, [loadAvatarCatalog]);
 
+  useEffect(() => {
+    setConfirmedAvatarId(null);
+    setCreds(null);
+    activeDeckKeyRef.current = "";
+  }, [deckKeyForReset]);
+
   const canPublishMic =
     typeof navigator !== "undefined" &&
     typeof navigator.mediaDevices?.getUserMedia === "function";
 
-  function handleAvatarChange(id: string) {
-    if (id === selectedAvatarId) return;
+  function handleConfirmAvatar(id: string) {
     writeStoredAvatarId(id);
-    setSelectedAvatarId(id);
+    setConfirmedAvatarId(id);
+    setCreds(null);
+    activeDeckKeyRef.current = "";
+    onError(null);
+  }
+
+  function handleChangeTutor() {
+    setConfirmedAvatarId(null);
     setCreds(null);
     activeDeckKeyRef.current = "";
   }
 
-  function handleNextAvatar() {
-    if (avatarOptions.length < 2) return;
-    handleAvatarChange(nextAvatarId(avatarOptions, selectedAvatarId));
-  }
-
-  const selectedAvatarIndex = avatarOptions.findIndex(
-    (a) => a.id === selectedAvatarId,
-  );
-  const selectedAvatarLabel =
-    avatarOptions.find((a) => a.id === selectedAvatarId)?.label ?? "";
-  const canCycleAvatars = avatarOptions.length > 1;
-  const nextDisabled =
-    avatarsLoading || connecting || !selectedAvatarId || !canCycleAvatars;
-  const nextTitle = catalogError
-    ? "Start the backend on http://localhost:8000, then click Retry"
-    : !canCycleAvatars
-      ? "Need 2+ tutors in backend BEY_AVATARS"
-      : "Switch to next tutor";
+  const confirmedAvatar = avatarOptions.find((a) => a.id === confirmedAvatarId);
+  const showPicker =
+    Boolean(deck?.segments?.length) &&
+    !confirmedAvatarId &&
+    !catalogError &&
+    avatarOptions.length > 0;
+  const showSession =
+    Boolean(deck?.segments?.length) &&
+    Boolean(confirmedAvatarId) &&
+    Boolean(confirmedAvatar);
 
   useEffect(() => {
-    if (!deck?.segments?.length || !selectedAvatarId) {
+    if (!showSession || !deck?.segments?.length || !confirmedAvatarId) {
       setCreds(null);
       activeDeckKeyRef.current = "";
       return;
     }
 
-    const key = `${selectedAvatarId}|${deckKey(deck)}`;
+    const key = `${confirmedAvatarId}|${deckKey(deck)}`;
     if (key === activeDeckKeyRef.current && creds) {
       return;
     }
@@ -327,7 +437,7 @@ export default function AvatarPanel({
     onError(null);
 
     const ctrl = new AbortController();
-    provisionCallWithRetry(deck, selectedAvatarId, ctrl.signal)
+    provisionCallWithRetry(deck, confirmedAvatarId, ctrl.signal)
       .then((c) => {
         if (ctrl.signal.aborted) return;
         if (!c) {
@@ -349,7 +459,7 @@ export default function AvatarPanel({
 
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- creds intentionally omitted
-  }, [deck, onError, selectedAvatarId]);
+  }, [deck, onError, confirmedAvatarId, showSession]);
 
   const total = deck?.segments.length ?? 0;
   const clampedIndex =
@@ -364,14 +474,18 @@ export default function AvatarPanel({
             {avatarsLoading && (
             <span className="panel-avatar-current">Loading tutors…</span>
           )}
-          {!avatarsLoading && !catalogError && avatarOptions.length > 0 && (
-            <span className="panel-avatar-current">
-              {selectedAvatarLabel
-                ? canCycleAvatars
-                  ? `${selectedAvatarLabel} (${selectedAvatarIndex + 1}/${avatarOptions.length})`
-                  : selectedAvatarLabel
-                : `${avatarOptions.length} tutor(s)`}
-            </span>
+          {!avatarsLoading && confirmedAvatar && (
+            <span className="panel-avatar-current">{confirmedAvatar.label}</span>
+          )}
+          {showSession && (
+            <button
+              type="button"
+              className="panel-button panel-button--secondary panel-avatar-change"
+              disabled={connecting}
+              onClick={handleChangeTutor}
+            >
+              Change tutor
+            </button>
           )}
         </div>
       </div>
@@ -390,36 +504,44 @@ export default function AvatarPanel({
         </p>
       )}
 
-      <div className="panel-avatar-wrap">
-        <div className="panel-avatar-controls">
-          <button
-            type="button"
-            className="panel-button panel-avatar-next-btn"
-            disabled={nextDisabled}
-            onClick={handleNextAvatar}
-            aria-label={`Next tutor (currently ${selectedAvatarLabel || "none"})`}
-            title={nextTitle}
+      {showPicker && (
+        <div className="panel-avatar-picker">
+          <p className="panel-hint panel-avatar-picker-intro">
+            Choose your tutor, then the lesson will start with live video and
+            narration.
+          </p>
+          <div
+            className="panel-avatar-picker-grid"
+            role="listbox"
+            aria-label="Tutor photos"
           >
-            Next tutor →
-          </button>
-        </div>
-
-        <div className="panel-avatar-tile">
-          <div className="panel-avatar-placeholder" aria-hidden>
-            Tutor
+            {avatarOptions.map((avatar) => (
+              <AvatarPhotoCard
+                key={avatar.id}
+                avatar={avatar}
+                selected={avatar.id === readStoredAvatarId()}
+                disabled={avatarsLoading}
+                onSelect={() => handleConfirmAvatar(avatar.id)}
+              />
+            ))}
           </div>
+        </div>
+      )}
 
-          {connecting && (
-            <p className="panel-avatar-overlay">Connecting to tutor…</p>
-          )}
+      {!deck?.segments?.length && !avatarsLoading && !catalogError && (
+        <p className="panel-hint panel-avatar-picker-intro">
+          Start a session and pick a teaching mode to choose a tutor.
+        </p>
+      )}
 
-          {!deck?.segments?.length && !connecting && (
-            <p className="panel-avatar-overlay panel-avatar-overlay--hint">
-              Select a mode after starting a session.
-            </p>
-          )}
+      {showSession && (
+        <div className="panel-avatar-wrap">
+          <div className="panel-avatar-tile">
+            {connecting && (
+              <p className="panel-avatar-overlay">Connecting to tutor…</p>
+            )}
 
-          {creds && deck && (
+            {creds && deck && (
             <LiveKitRoom
               serverUrl={creds.livekit_url}
               token={creds.livekit_token}
@@ -440,11 +562,12 @@ export default function AvatarPanel({
                 className="panel-avatar-start-audio"
               />
             </LiveKitRoom>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {currentSay && deck && (
+      {currentSay && deck && showSession && creds && (
         <p className="panel-avatar-say">
           <span className="panel-avatar-say-label">
             Speaking ({clampedIndex + 1}/{total})

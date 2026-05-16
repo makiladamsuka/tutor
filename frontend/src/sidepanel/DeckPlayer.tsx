@@ -95,7 +95,8 @@ export default function DeckPlayer({
         </button>
       </div>
       <p className="panel-hint panel-deck-nav-hint">
-        Prev/Next hold playback. Resume speaks the current slide (see console).
+        Slides advance automatically when the tutor finishes each part.
+        Prev/Next pause auto-advance; Resume speaks the current slide.
       </p>
     </article>
   );

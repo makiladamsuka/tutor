@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 
@@ -13,6 +15,10 @@ class AvatarOption(BaseModel):
     id: str = Field(min_length=1)
     label: str = Field(min_length=1)
     agent_id: str = Field(min_length=1)
+    image_url: Optional[str] = Field(
+        default=None,
+        description="Photo for the picker: https://… or static/avatars/name.jpg",
+    )
 
 
 class AvatarCatalog(BaseModel):
@@ -34,6 +40,9 @@ def _parse_bey_avatars_json(raw: str) -> list[AvatarOption]:
 
 def load_avatar_catalog() -> AvatarCatalog:
     """Resolve configured avatars. Raises ValueError on invalid BEY_AVATARS."""
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    load_dotenv(env_path, override=True)
+
     raw = os.environ.get("BEY_AVATARS", "").strip()
     if raw:
         avatars = _parse_bey_avatars_json(raw)

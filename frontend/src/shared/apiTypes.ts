@@ -72,6 +72,7 @@ export type HealthResponse = {
 export type AvatarListItem = {
   id: string;
   label: string;
+  image_url?: string | null;
 };
 
 export type AvatarListResponse = {

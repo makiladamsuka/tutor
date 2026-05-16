@@ -47,6 +47,7 @@ class CreateCallRequest(BaseModel):
 class AvatarListItem(BaseModel):
     id: str
     label: str
+    image_url: Optional[str] = None
 
 
 class AvatarListResponse(BaseModel):
@@ -62,6 +63,16 @@ class CreateCallResponse(BaseModel):
 
 
 router = APIRouter(tags=["avatar"])
+
+
+def _catalog_image_url(image_url: Optional[str]) -> Optional[str]:
+    if not image_url or not image_url.strip():
+        return None
+    url = image_url.strip()
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    base = os.environ.get("TUTOR_PUBLIC_BASE", "http://localhost:8000").rstrip("/")
+    return f"{base}/{url.lstrip('/')}"
 
 
 def _bey_headers(api_key: str) -> dict[str, str]:
@@ -200,7 +211,14 @@ def list_avatars() -> AvatarListResponse:
         )
     return AvatarListResponse(
         default_id=catalog.default_id,
-        avatars=[AvatarListItem(id=a.id, label=a.label) for a in configured],
+        avatars=[
+            AvatarListItem(
+                id=a.id,
+                label=a.label,
+                image_url=_catalog_image_url(a.image_url),
+            )
+            for a in configured
+        ],
     )
 
 
