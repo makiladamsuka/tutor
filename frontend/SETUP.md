@@ -108,6 +108,19 @@ The panel calls **`http://localhost:8000`** (see [`src/shared/api.ts`](src/share
 
 ---
 
+## 5b. Beyond Presence avatar (Step 10, optional)
+
+```bash
+cd frontend
+cp .env.example .env
+# Edit .env: VITE_BEY_AGENT_ID=<your-agent-id from https://app.bey.chat/myAgents → Embed>
+npm run build
+```
+
+Reload the extension after changing `.env`. Without an agent id, slides still **speak** via browser TTS; the iframe shows a placeholder.
+
+---
+
 ## 6. Quick manual test
 
 1. Open an article, e.g. [Photosynthesis (Wikipedia)](https://en.wikipedia.org/wiki/Photosynthesis).
@@ -116,7 +129,8 @@ The panel calls **`http://localhost:8000`** (see [`src/shared/api.ts`](src/share
 4. **Scrape this page** → block count and previews.
 5. **Start session** → summary + `session_id` (may take a while on long pages).
 6. Click a mode (**Teach**, **Summarise**, etc.) → wait for the deck (first request can take ~30–60s on large pages; repeat clicks use backend cache).
-7. Use **Prev / Next / Resume** on the deck (Step 8+).
+7. Click a mode → hear each slide spoken; watch auto-advance (Step 10).
+8. Use **Prev / Next / Resume** — Next/Prev hold speech; Resume continues.
 
 **Content script check:** On the article tab, DevTools → Console → you should see `[tutor] content script loaded` after reload.
 
@@ -149,7 +163,8 @@ frontend/
 ├── src/
 │   ├── sidepanel/        # React UI (App.tsx, DeckPlayer, …)
 │   ├── background/       # Service worker message hub
-│   ├── content/          # Readability scrape + (future) highlights
+│   ├── content/          # Readability scrape + highlights
+│   ├── sidepanel/avatar/ # BP iframe + browser TTS (Step 10)
 │   └── shared/           # API client, messages, types
 ├── SETUP.md              # This file
 ├── BUILD_PLAYBOOK.md     # Step-by-step build journal

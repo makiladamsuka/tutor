@@ -7,6 +7,10 @@ export default defineManifest({
   description: "Beyond Presence AI Tutor Extension",
   permissions: ["sidePanel", "activeTab", "scripting", "tabs"],
   host_permissions: ["<all_urls>"],
+  content_security_policy: {
+    extension_pages:
+      "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
+  },
   side_panel: {
     default_path: "src/sidepanel/index.html",
   },

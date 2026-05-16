@@ -276,9 +276,37 @@ cd frontend && npm run build && npm run lint
 
 ## Step 10 — Beyond Presence (optional for “backend test”; required for full product)
 
-**What:** Replace logging **`say`** with **`avatar.say(...)`**; Prev/Next → **`pause`**; on **`audio_complete`** advance segment when auto-playing.
+**What:** BP **iframe** in the panel (`VITE_BEY_AGENT_ID`) plus **browser TTS** for each segment’s `say`. Prev/Next → **pause**; speech **end** → auto-advance while **Speaking**.
 
-**Done when:** Avatar reads each segment in sync with slides + highlights.
+**Do:**
+
+- [`src/sidepanel/avatar/speechController.ts`](src/sidepanel/avatar/speechController.ts) — `say`, `pause`, `onSpeechEnd`.
+- [`src/sidepanel/avatar/AvatarPanel.tsx`](src/sidepanel/avatar/AvatarPanel.tsx) — `https://bey.chat/{agent-id}` iframe.
+- [`deckPlayback.ts`](src/sidepanel/deckPlayback.ts) — `playSegmentAt`; wire TTS in `speakSegment` / `pauseAvatar`.
+- [`App.tsx`](src/sidepanel/App.tsx) — `onSpeechEnd` auto-advance; mount `AvatarPanel`.
+- [`manifest.config.ts`](manifest.config.ts) — `frame-src` CSP for bey.chat.
+- Copy [`frontend/.env.example`](.env.example) → `frontend/.env`, set `VITE_BEY_AGENT_ID`, rebuild.
+
+**Verify:**
+
+```bash
+cd frontend && npm run lint && npm run build
+# Reload extension after .env changes
+```
+
+| Check | Expected |
+|-------|----------|
+| No agent id | Placeholder; TTS still speaks slides |
+| With agent id | iframe loads in panel |
+| Teach slide 1 | Hear speech; highlights on article tab |
+| Speech ends | Auto-advance to slide 2 (Speaking) |
+| Next while Speaking | Speech stops; Held; no auto-advance |
+| Resume | Re-speaks slide; auto-advance continues |
+| Last slide ends | “Deck complete”; stays on last slide |
+
+**Note:** iframe is conversational; lip-sync to exact `say` needs speech-to-video later.
+
+**Done when:** Avatar visible + spoken slides sync with highlights and auto-advance; build + lint pass.
 
 ---
 

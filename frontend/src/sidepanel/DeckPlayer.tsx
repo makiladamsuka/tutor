@@ -13,6 +13,7 @@ type DeckPlayerProps = {
   mode: Mode | null;
   segmentIndex: number;
   playbackState: PlaybackState;
+  deckComplete?: boolean;
   onPrev: () => void;
   onNext: () => void;
   onResume: () => void;
@@ -23,6 +24,7 @@ export default function DeckPlayer({
   mode,
   segmentIndex,
   playbackState,
+  deckComplete = false,
   onPrev,
   onNext,
   onResume,
@@ -94,8 +96,12 @@ export default function DeckPlayer({
           Resume
         </button>
       </div>
+      {deckComplete && atEnd && playbackState === "speaking" && (
+        <p className="panel-status panel-status--ok">Deck complete.</p>
+      )}
       <p className="panel-hint panel-deck-nav-hint">
-        Prev/Next hold playback. Resume speaks the current slide (see console).
+        Prev/Next hold speech. Resume speaks the current slide and continues
+        auto-advance.
       </p>
     </article>
   );
