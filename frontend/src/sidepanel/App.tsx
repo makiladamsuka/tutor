@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { getHealth, postSession } from "../shared/api";
+import type { SessionRequest } from "../shared/apiTypes";
 import type { PageExtractedPayload } from "../shared/messages";
 import {
   onBackgroundMessage,
@@ -6,10 +8,22 @@ import {
   SERVICE_WORKER_HINT,
 } from "../shared/messaging";
 
+const FALLBACK_SESSION_BODY: SessionRequest = {
+  title: "Tutor API test",
+  url: "https://example.com/test",
+  blocks: [
+    { id: "b1", text: "Photosynthesis converts light energy into chemical energy." },
+    { id: "b2", text: "Chlorophyll in chloroplasts absorbs light for the process." },
+  ],
+};
+
 function formatError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   if (/Receiving end does not exist/i.test(msg)) {
     return `${msg}\n\n${SERVICE_WORKER_HINT}`;
+  }
+  if (/Failed to fetch/i.test(msg)) {
+    return `${msg}\n\nIs the backend running? cd backend && uv run uvicorn main:app --reload`;
   }
   return msg;
 }
@@ -31,6 +45,12 @@ export default function App() {
   const [extracted, setExtracted] = useState<PageExtractedPayload | null>(
     null,
   );
+  const [healthStatus, setHealthStatus] = useState<string | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [checkingHealth, setCheckingHealth] = useState(false);
+  const [sessionResult, setSessionResult] = useState<string | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [testingSession, setTestingSession] = useState(false);
 
   const requestContentStatus = useCallback(async () => {
     try {
@@ -61,6 +81,48 @@ export default function App() {
     void requestContentStatus();
     return unsubscribe;
   }, [requestContentStatus]);
+
+  async function handleCheckHealth() {
+    setHealthError(null);
+    setHealthStatus(null);
+    setCheckingHealth(true);
+    try {
+      const res = await getHealth();
+      setHealthStatus(res.ok ? "Backend ok" : "Unexpected health response");
+    } catch (err) {
+      setHealthError(formatError(err));
+    } finally {
+      setCheckingHealth(false);
+    }
+  }
+
+  async function handleTestSession() {
+    setSessionError(null);
+    setSessionResult(null);
+    setTestingSession(true);
+    const body: SessionRequest =
+      extracted && extracted.blocks.length > 0
+        ? {
+            title: extracted.title,
+            url: extracted.url,
+            blocks: extracted.blocks,
+          }
+        : FALLBACK_SESSION_BODY;
+    try {
+      const res = await postSession(body);
+      const idShort =
+        res.session_id.length > 12
+          ? `${res.session_id.slice(0, 12)}…`
+          : res.session_id;
+      setSessionResult(
+        `session_id: ${idShort}\n${res.header_summary}`,
+      );
+    } catch (err) {
+      setSessionError(formatError(err));
+    } finally {
+      setTestingSession(false);
+    }
+  }
 
   async function handlePing() {
     setError(null);
@@ -105,7 +167,7 @@ export default function App() {
   return (
     <main className="panel-root">
       <h1>Tutor</h1>
-      <p className="panel-subtitle">Step 4: scrape article blocks</p>
+      <p className="panel-subtitle">Steps 4–5: scrape + backend API</p>
 
       <section className="panel-section">
         <h2 className="panel-heading">Scrape</h2>
@@ -140,6 +202,48 @@ export default function App() {
               ))}
             </ul>
           </div>
+        )}
+      </section>
+
+      <section className="panel-section">
+        <h2 className="panel-heading">Backend</h2>
+        <p className="panel-hint">http://localhost:8000 — run uvicorn first.</p>
+        <button
+          type="button"
+          className="panel-button panel-button--secondary"
+          onClick={() => void handleCheckHealth()}
+          disabled={checkingHealth}
+        >
+          {checkingHealth ? "Checking…" : "Check health"}
+        </button>
+        {healthStatus && (
+          <p className="panel-status panel-status--ok">{healthStatus}</p>
+        )}
+        {healthError && (
+          <p className="panel-status panel-status--err panel-status--pre">
+            {healthError}
+          </p>
+        )}
+        <button
+          type="button"
+          className="panel-button"
+          onClick={() => void handleTestSession()}
+          disabled={testingSession}
+        >
+          {testingSession ? "Calling /session…" : "Test POST /session"}
+        </button>
+        <p className="panel-hint">
+          Uses scraped page if available; otherwise a 2-block test payload.
+        </p>
+        {sessionResult && (
+          <p className="panel-status panel-status--ok panel-status--pre">
+            {sessionResult}
+          </p>
+        )}
+        {sessionError && (
+          <p className="panel-status panel-status--err panel-status--pre">
+            {sessionError}
+          </p>
         )}
       </section>
 

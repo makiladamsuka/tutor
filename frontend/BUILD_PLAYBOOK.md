@@ -136,7 +136,24 @@ cd frontend && npm run build
 
 - Helpers: `postSession`, `postMode`, `postChat`, `postFlashcards` (optional Zod validation).
 
-**Done when:** From panel, hard-coded **`fetch`** to **`POST /session`** returns **`session_id`** (Swagger parity).
+**Done when:**
+
+```bash
+# terminal 1
+cd backend && uv run uvicorn main:app --reload
+
+# terminal 2
+cd frontend && npm run build
+# Reload extension at chrome://extensions
+```
+
+| Check | Expected |
+| ----- | ---------- |
+| Health | Side panel → **Check health** → “Backend ok” |
+| Session | **Test POST /session** (after scrape or fallback) → `session_id` + `header_summary` |
+| Swagger | Same body succeeds at http://localhost:8000/docs |
+
+**Code:** [`src/shared/api.ts`](src/shared/api.ts), [`src/shared/apiTypes.ts`](src/shared/apiTypes.ts), panel **Backend** section in [`src/sidepanel/App.tsx`](src/sidepanel/App.tsx).
 
 ---
 
