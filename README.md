@@ -8,6 +8,9 @@ like a real lecture.
 
 ## Repository layout
 
+- **[`BACKEND_AND_FRONTEND_GUIDE.md`](BACKEND_AND_FRONTEND_GUIDE.md)** —
+  how the backend fits together (modules, RAG, each endpoint) and how to
+  build / migrate the [`frontend/`](frontend/) folder.
 - [`backend/`](backend/) — FastAPI service. OpenAI for chat + embeddings,
   numpy for in-memory retrieval. All endpoints are plain HTTP; the avatar's
   TTS is the streaming experience. See [`backend/README.md`](backend/README.md)
@@ -243,5 +246,8 @@ phasing live in
 
 ## Status
 
-Backend is at Step 4 of 10 (CORS configured; OpenAI smoke test passing). See
-[`backend/README.md`](backend/README.md) for the playbook.
+Backend playbook is **10/10** (`/session`, `/mode`, `/chat`, `/flashcards`).
+See [`backend/README.md`](backend/README.md). Frontend: Next.js boilerplate
+in [`frontend/`](frontend/) — migrate to Vite + `@crxjs/vite-plugin` per
+[`frontend/README.md`](frontend/README.md); overview in
+[`BACKEND_AND_FRONTEND_GUIDE.md`](BACKEND_AND_FRONTEND_GUIDE.md).

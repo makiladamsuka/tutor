@@ -6,9 +6,13 @@ speech, and highlights paragraphs on the live page as the avatar walks
 through them.
 
 > **Backend / API status:** [`../backend/README.md`](../backend/README.md)
+> **Backend + frontend overview:** [`../BACKEND_AND_FRONTEND_GUIDE.md`](../BACKEND_AND_FRONTEND_GUIDE.md)
 > **Full product plan + phasing:** [`../.cursor/plans/interactive-wiki-tutor_1e075354.plan.md`](../.cursor/plans/interactive-wiki-tutor_1e075354.plan.md)
 > **Canonical contract:** [`../README.md`](../README.md) — this file repeats
 > the frontend-relevant parts so you don't have to bounce between docs.
+> **Concepts deep-dive:** [`CONCEPTS.md`](CONCEPTS.md) — the "why does it
+> work this way" companion to this spec (ID systems, the three channels per
+> segment, BP push vs pull, slide state machine in code).
 
 ## What you're building
 
@@ -293,12 +297,11 @@ sanity-check shapes before wiring them into the panel.
 
 ## Status
 
-- **Backend:** Step 6 of 10 done — `POST /session` live, in-memory store
-  in place. Next is chunking + RAG, then `POST /mode`, `POST /chat`,
-  `POST /flashcards`. See [`../backend/README.md`](../backend/README.md)
-  for the playbook.
-- **Frontend:** not started. The boilerplate in this folder is the default
-  `create-next-app` template; rebuild on Vite + crxjs.
+- **Backend:** playbook **10/10** — `/session`, `/mode`, `/chat`, `/flashcards`.
+  See [`../backend/README.md`](../backend/README.md) and
+  [`../BACKEND_AND_FRONTEND_GUIDE.md`](../BACKEND_AND_FRONTEND_GUIDE.md).
+- **Frontend:** Next.js boilerplate in this folder; extension target is **Vite +
+  `@crxjs/vite-plugin`** per above. Not shipped as MV3 yet.
 
 ### Suggested first slice (smallest demoable thing)
 

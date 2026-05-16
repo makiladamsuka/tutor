@@ -3,16 +3,16 @@
 Sessions live for the lifetime of the uvicorn process. There is no
 persistence; restart the server to wipe everything. This is intentional for
 the MVP — the session payload is large but cheap to recreate from the page.
-
-Step 7 (chunking + RAG) will add `chunks` and `embeddings` fields populated
-when the session is created.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+import numpy as np
 
 from tutor.models import Block
+from tutor.rag import Chunk
 
 
 @dataclass
@@ -22,9 +22,11 @@ class Session:
     url: str
     blocks: list[Block]
     header_summary: str
-    # Step 7 will add:
-    # chunks: list[Chunk] = field(default_factory=list)
-    # embeddings: np.ndarray | None = None
+    chunks: list[Chunk] = field(default_factory=list)
+    # (len(chunks), 1536) L2-normalised matrix from `tutor.rag.embed_texts`.
+    # `None` only during construction; populated by the time the session is
+    # `put()` into the store from the `/session` endpoint.
+    embeddings: np.ndarray | None = None
 
 
 _sessions: dict[str, Session] = {}
