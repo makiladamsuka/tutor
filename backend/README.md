@@ -149,8 +149,14 @@ content script has extracted the page.
   "title": "Photosynthesis",
   "url": "https://en.wikipedia.org/wiki/Photosynthesis",
   "blocks": [
-    { "id": "b1", "text": "Photosynthesis is a biological process..." },
-    { "id": "b2", "text": "It mainly occurs in chloroplasts..." }
+    {"id":"b1","text":"Photosynthesis is a biological process used by plants, algae, and some bacteria to convert light energy into chemical energy stored in glucose. It is the primary source of energy for nearly all life on Earth."},
+    {"id":"b2","text":"Chlorophyll is the green pigment in plant cells that absorbs light, primarily in the blue and red wavelengths. It is found inside chloroplasts."},
+    {"id":"b3","text":"Chloroplasts are organelles found in plant cells where photosynthesis takes place. They contain stacks of thylakoid membranes called grana."},
+    {"id":"b4","text":"The light-dependent reactions occur in the thylakoid membranes and produce ATP and NADPH, which power the rest of the process."},
+    {"id":"b5","text":"The Calvin cycle, also called the light-independent reactions, takes place in the stroma of the chloroplast and uses ATP and NADPH to fix carbon dioxide into glucose."},
+    {"id":"b6","text":"The overall reaction is: 6 CO2 + 6 H2O + light energy -> C6H12O6 + 6 O2. Oxygen is released as a byproduct."},
+    {"id":"b7","text":"C4 plants such as maize and sugarcane have evolved a different mechanism that concentrates carbon dioxide before the Calvin cycle, making them more efficient in hot, dry environments."},
+    {"id":"b8","text":"CAM plants, including cacti and pineapples, open their stomata at night to fix carbon dioxide and store it for use during the day, conserving water."}
   ]
 }
 ```
@@ -240,7 +246,12 @@ server-side.
 
 ### 8. `POST /mode` — done
 
-Body: `{session_id, mode, lang}`. Modes: `teach | summarise | quiz | explain_simply`.
+Body: `{session_id, mode, lang, regenerate?}`. Modes: `teach | summarise | quiz | explain_simply`.
+
+**Caching:** The first call per `(session_id, mode, lang)` runs `build_deck` and
+stores the result on the in-memory `Session`. Later calls return the cached deck
+in milliseconds unless `regenerate: true`. A new `POST /session` starts with an
+empty cache.
 
 Each mode is a system prompt in `tutor/agent.py`. All four ask OpenAI for the
 same structured shape:
@@ -291,11 +302,12 @@ the avatar speaks.
     session as labelled context (`Chunk c2 (from blocks b4,b5,b6): ...`),
     calls `gpt-4o-mini` with strict JSON schema response format
     (`temperature=0.4`), validates via `Deck.model_validate_json`, returns.
+- **`tutor/store.py`** — `Session.decks` keyed by `"mode:lang"`; `get_deck` /
+  `put_deck` helpers.
 - **`main.py`**:
-  - `@app.post("/mode", response_model=Deck)` — looks up the session via
-    `store.get` (404 if missing), defensively rejects sessions with no
-    chunks (409, unreachable in practice since `/session` always populates
-    chunks), maps the API-key `RuntimeError` to 500.
+  - `@app.post("/mode", response_model=Deck)` — cache hit unless
+    `regenerate: true`; otherwise `build_deck`, then `put_deck`. 404 / 409 /
+    500 as before.
 
 Quiz mode behaviour: each segment is one Q+A pair. `say` reads the
 question, writes "..." for a thinking beat, then reveals the answer with a
@@ -392,9 +404,13 @@ broadening is purely a small-corpus artefact, not a contract issue.
 
 ### 10. `POST /flashcards` — done
 
-Body: `{session_id, n=8}` (`n` defaults to 8 via pydantic, capped at 1..20
-in the route). Returns a top-level JSON array of `n` flashcards generated
-from the page:
+Body: `{session_id, n=8, regenerate?}` (`n` defaults to 8 via pydantic,
+capped at 1..20 in the route). Returns a top-level JSON array of `n`
+flashcards generated from the page.
+
+**Caching:** First call per `(session_id, n)` runs `build_flashcards` and
+stores the list on `Session.flashcards_by_n`. Repeat calls return the cache
+unless `regenerate: true`.
 
 ```json
 [
@@ -424,12 +440,12 @@ from the page:
     `gpt-4o-mini` with strict JSON schema response format
     (`temperature=0.4`), `json.loads` the content, and validates each
     card via `Flashcard.model_validate`.
+- **`tutor/store.py`** — `Session.flashcards_by_n` keyed by `n`; `get_flashcards` /
+  `put_flashcards` helpers.
 - **`main.py`**:
-  - `@app.post("/flashcards", response_model=list[Flashcard])` — 400 if
-    `n` is outside `1..20` (a soft cap that keeps token cost predictable;
-    raise later if needed), 404 on missing `session_id`, 409 on the
-    defensive chunkless-session case, 500 on `RuntimeError` (missing API
-    key).
+  - `@app.post("/flashcards", response_model=list[Flashcard])` — cache hit
+    unless `regenerate: true`; otherwise `build_flashcards`, then
+    `put_flashcards`. 400 / 404 / 409 / 500 as before.
 
 **Why blocks instead of chunks**
 

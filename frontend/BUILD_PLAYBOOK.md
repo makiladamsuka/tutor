@@ -157,28 +157,66 @@ cd frontend && npm run build
 
 ---
 
-## Step 6 — Wire Scrape → session (backend smoke test)
+## Step 6 — Wire Scrape → session
 
-**What:** After **Scrape**, user clicks **Start session** (or auto): **`POST /session`** with `{ title, url, blocks }`.
+**What:** Primary flow: **Scrape** then **Start session** → **`POST /session`** with scraped `{ title, url, blocks }`. Store **`session_id`**, show **`header_summary`**. Mode buttons visible but disabled until session exists (wired in Step 7).
 
 **Do:**
 
-- Store **`session_id`** in React state; show **`header_summary`**.
-- Disable mode buttons until **`session_id`** exists.
+- Panel: **Session** section with **Start session** (scraped payload only; no fallback on primary button).
+- Clear session state on new **`page:extracted`** (re-scrape invalidates old session).
+- **Modes** row: Teach, Summarise, Quiz me, Explain simply — `disabled` until `session_id`.
+- **Debug** `<details>`: Check health, Test POST /session (fallback), ping/inject tools.
+- Scrape button: clear **Scraping…** in `finally` after background ack (not only on `page:extracted`).
 
-**Done when:** Wikipedia → Scrape → Start session → summary appears; **`session_id`** visible in UI or devtools; `/docs` shows 200 for that session.
+**Verify:**
+
+```bash
+cd backend && uv run uvicorn main:app --reload
+cd frontend && npm run build && npm run lint
+# Reload extension in chrome://extensions
+```
+
+| Check | Expected |
+|-------|----------|
+| No scrape | **Start session** disabled; hint to scrape first |
+| Scrape → Start session | **`header_summary`** prominent; **`session_id`** shown |
+| Re-scrape | Previous session cleared until **Start session** again |
+| Modes | Four buttons visible, disabled until session |
+| Backend | `http://localhost:8000/docs` — session created; modes in Step 7 |
+
+**Done when:** Wikipedia → Scrape → Start session (large pages may wait on embeddings) → read summary → mode buttons enable; build + lint pass.
 
 ---
 
 ## Step 7 — Mode buttons → `POST /mode`
 
-**What:** Buttons **Teach**, **Summarise**, **Quiz me**, **Explain simply** call **`POST /mode`** with `{ session_id, mode, lang }` (`lang: "en"` is fine to start).
+**What:** Buttons **Teach**, **Summarise**, **Quiz me**, **Explain simply** call **`POST /mode`** with `{ session_id, mode, lang: "en" }`. Panel renders the returned **`Deck`** (all segments stacked; no Prev/Next yet).
 
 **Do:**
 
-- Render **`Deck`**: `title`, `segments[]` with `slide.title`, `slide.bullets`, keep `say` for later (Step 10).
+- `handleMode` → `postMode`; store `deck`, `activeMode`; loading + error UX.
+- Clear deck on re-scrape and on new **Start session**.
+- [`DeckView.tsx`](src/sidepanel/DeckView.tsx): `title`, each `slide.title` + `slide.bullets`; segment `id` for debug. **`say`** not shown (Step 10).
 
-**Done when:** Each button returns a deck and UI differs (quiz vs teach bullets per [`README.md`](../README.md)). **No avatar required** — proves **frontend ↔ backend** for modes.
+**Verify:**
+
+```bash
+cd backend && uv run uvicorn main:app --reload
+cd frontend && npm run build && npm run lint
+# Reload extension
+```
+
+| Check | Expected |
+|-------|----------|
+| No session | Mode buttons disabled |
+| Click Teach | Loading → deck with title + 5–8 segments |
+| Click same mode again | Near-instant (backend cache hit; same deck content) |
+| Click Quiz | Different bullets (questions, not teach points) |
+| Re-scrape | Deck cleared until new session + mode click |
+| Backend | `/docs` POST /mode 200 with same `session_id` |
+
+**Done when:** Wikipedia → Scrape → Start session → each mode (~5–15s) shows a distinct deck; build + lint pass. **No avatar** — proves frontend ↔ backend for modes.
 
 ---
 

@@ -42,6 +42,7 @@ class ModeRequest(BaseModel):
     session_id: str
     mode: Mode
     lang: Lang = "en"
+    regenerate: bool = False
 
 
 class Slide(BaseModel):
@@ -78,6 +79,7 @@ class ChatResponse(BaseModel):
 class FlashcardRequest(BaseModel):
     session_id: str
     n: int = 8
+    regenerate: bool = False
 
 
 class Flashcard(BaseModel):

@@ -22,6 +22,7 @@ export type ModeRequest = {
   session_id: string;
   mode: Mode;
   lang?: Lang;
+  regenerate?: boolean;
 };
 
 export type Slide = {
@@ -54,6 +55,7 @@ export type ChatResponse = {
 export type FlashcardRequest = {
   session_id: string;
   n?: number;
+  regenerate?: boolean;
 };
 
 export type Flashcard = {

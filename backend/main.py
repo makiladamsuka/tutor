@@ -18,7 +18,15 @@ from tutor.models import (
     SessionResponse,
 )
 from tutor.rag import chunk_blocks, embed_texts
-from tutor.store import Session, get, put
+from tutor.store import (
+    Session,
+    get,
+    get_deck,
+    get_flashcards,
+    put,
+    put_deck,
+    put_flashcards,
+)
 
 load_dotenv()
 
@@ -99,7 +107,13 @@ def post_mode(payload: ModeRequest) -> Deck:
             detail="session has no chunks; recreate it via POST /session",
         )
     try:
-        return build_deck(session, payload.mode, payload.lang)
+        if not payload.regenerate:
+            cached = get_deck(session, payload.mode, payload.lang)
+            if cached is not None:
+                return cached
+        deck = build_deck(session, payload.mode, payload.lang)
+        put_deck(session, payload.mode, payload.lang, deck)
+        return deck
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -135,6 +149,12 @@ def post_flashcards(payload: FlashcardRequest) -> list[Flashcard]:
             detail="session has no chunks; recreate it via POST /session",
         )
     try:
-        return build_flashcards(session, payload.n)
+        if not payload.regenerate:
+            cached = get_flashcards(session, payload.n)
+            if cached is not None:
+                return cached
+        cards = build_flashcards(session, payload.n)
+        put_flashcards(session, payload.n, cards)
+        return cards
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

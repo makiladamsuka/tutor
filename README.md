@@ -134,6 +134,7 @@ backend process runs.
   session_id: string;
   mode: "teach" | "summarise" | "quiz" | "explain_simply";
   lang: "en" | "hi" | "si" | "ta";   // default "en"
+  regenerate?: boolean;              // default false — true forces a new LLM call
 }
 
 // response
@@ -150,6 +151,9 @@ backend process runs.
   }>;
 }
 ```
+
+Repeat calls with the same `session_id`, `mode`, and `lang` return the cached
+deck instantly (in-memory until the backend restarts or a new session is created).
 
 The shape of `segments` is identical across all four modes. Only the content
 of `slide.bullets` differs:
@@ -183,7 +187,11 @@ No streaming protocol. The avatar's TTS is the perceived stream.
 
 ```ts
 // request body
-{ session_id: string; n?: number }   // default n=8
+{
+  session_id: string;
+  n?: number;                        // default n=8
+  regenerate?: boolean;               // default false — true forces a new LLM call
+}
 
 // response
 Array<{
@@ -192,6 +200,8 @@ Array<{
   source_chunk_id: string;           // block ID used to ground the card
 }>
 ```
+
+Repeat calls with the same `session_id` and `n` return the cached list instantly.
 
 ### 3. Slide deck navigation state machine
 

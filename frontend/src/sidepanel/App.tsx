@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { getHealth, postSession } from "../shared/api";
-import type { SessionRequest } from "../shared/apiTypes";
+import { getHealth, postMode, postSession } from "../shared/api";
+import type { Deck, Mode, SessionRequest } from "../shared/apiTypes";
+import DeckView from "./DeckView";
 import type { PageExtractedPayload } from "../shared/messages";
 import {
   onBackgroundMessage,
@@ -16,6 +17,13 @@ const FALLBACK_SESSION_BODY: SessionRequest = {
     { id: "b2", text: "Chlorophyll in chloroplasts absorbs light for the process." },
   ],
 };
+
+const MODE_BUTTONS: { mode: Mode; label: string }[] = [
+  { mode: "teach", label: "Teach" },
+  { mode: "summarise", label: "Summarise" },
+  { mode: "quiz", label: "Quiz me" },
+  { mode: "explain_simply", label: "Explain simply" },
+];
 
 function formatError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
@@ -35,6 +43,20 @@ function truncate(text: string, max = 120): string {
   return `${text.slice(0, max)}…`;
 }
 
+function clearSession(
+  setSessionId: (v: string | null) => void,
+  setHeaderSummary: (v: string | null) => void,
+  setSessionError: (v: string | null) => void,
+): void {
+  setSessionId(null);
+  setHeaderSummary(null);
+  setSessionError(null);
+}
+
+function modeLabel(mode: Mode): string {
+  return MODE_BUTTONS.find((b) => b.mode === mode)?.label ?? mode;
+}
+
 export default function App() {
   const [pong, setPong] = useState<string | null>(null);
   const [contentPing, setContentPing] = useState<string | null>(null);
@@ -45,12 +67,27 @@ export default function App() {
   const [extracted, setExtracted] = useState<PageExtractedPayload | null>(
     null,
   );
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [headerSummary, setHeaderSummary] = useState<string | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [startingSession, setStartingSession] = useState(false);
   const [healthStatus, setHealthStatus] = useState<string | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [checkingHealth, setCheckingHealth] = useState(false);
-  const [sessionResult, setSessionResult] = useState<string | null>(null);
-  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [devSessionResult, setDevSessionResult] = useState<string | null>(null);
+  const [devSessionError, setDevSessionError] = useState<string | null>(null);
   const [testingSession, setTestingSession] = useState(false);
+  const [activeMode, setActiveMode] = useState<Mode | null>(null);
+  const [deck, setDeck] = useState<Deck | null>(null);
+  const [loadingMode, setLoadingMode] = useState<Mode | null>(null);
+  const [modeError, setModeError] = useState<string | null>(null);
+
+  const clearDeck = useCallback(() => {
+    setDeck(null);
+    setActiveMode(null);
+    setModeError(null);
+    setLoadingMode(null);
+  }, []);
 
   const requestContentStatus = useCallback(async () => {
     try {
@@ -68,7 +105,8 @@ export default function App() {
       }
       if (msg.type === "page:extracted") {
         setExtracted(msg.payload);
-        setScraping(false);
+        clearSession(setSessionId, setHeaderSummary, setSessionError);
+        clearDeck();
         if (msg.payload.blocks.length === 0) {
           setScrapeError(
             "Extraction returned no blocks. Try an article page (Wikipedia, MDN).",
@@ -80,7 +118,7 @@ export default function App() {
     });
     void requestContentStatus();
     return unsubscribe;
-  }, [requestContentStatus]);
+  }, [requestContentStatus, clearDeck]);
 
   async function handleCheckHealth() {
     setHealthError(null);
@@ -96,9 +134,35 @@ export default function App() {
     }
   }
 
-  async function handleTestSession() {
+  async function handleStartSession() {
+    if (!extracted || extracted.blocks.length === 0) {
+      setSessionError("Scrape this page first.");
+      return;
+    }
+
     setSessionError(null);
-    setSessionResult(null);
+    clearDeck();
+    setStartingSession(true);
+    try {
+      const res = await postSession({
+        title: extracted.title,
+        url: extracted.url,
+        blocks: extracted.blocks,
+      });
+      setSessionId(res.session_id);
+      setHeaderSummary(res.header_summary);
+    } catch (err) {
+      setSessionId(null);
+      setHeaderSummary(null);
+      setSessionError(formatError(err));
+    } finally {
+      setStartingSession(false);
+    }
+  }
+
+  async function handleTestSession() {
+    setDevSessionError(null);
+    setDevSessionResult(null);
     setTestingSession(true);
     const body: SessionRequest =
       extracted && extracted.blocks.length > 0
@@ -114,11 +178,11 @@ export default function App() {
         res.session_id.length > 12
           ? `${res.session_id.slice(0, 12)}…`
           : res.session_id;
-      setSessionResult(
+      setDevSessionResult(
         `session_id: ${idShort}\n${res.header_summary}`,
       );
     } catch (err) {
-      setSessionError(formatError(err));
+      setDevSessionError(formatError(err));
     } finally {
       setTestingSession(false);
     }
@@ -151,23 +215,50 @@ export default function App() {
     }
   }
 
+  async function handleMode(mode: Mode) {
+    if (!sessionId) {
+      return;
+    }
+
+    setModeError(null);
+    setLoadingMode(mode);
+    try {
+      const result = await postMode({
+        session_id: sessionId,
+        mode,
+        lang: "en",
+      });
+      setDeck(result);
+      setActiveMode(mode);
+    } catch (err) {
+      setDeck(null);
+      setActiveMode(null);
+      setModeError(formatError(err));
+    } finally {
+      setLoadingMode(null);
+    }
+  }
+
   async function handleScrape() {
     setScrapeError(null);
     setScraping(true);
     try {
       await sendToBackground({ type: "page:requestExtract" });
     } catch (err) {
-      setScraping(false);
       setScrapeError(formatError(err));
+    } finally {
+      setScraping(false);
     }
   }
 
   const previewBlocks = extracted?.blocks.slice(0, 3) ?? [];
+  const canStartSession =
+    Boolean(extracted && extracted.blocks.length > 0) && !startingSession;
 
   return (
     <main className="panel-root">
       <h1>Tutor</h1>
-      <p className="panel-subtitle">Steps 4–5: scrape + backend API</p>
+      <p className="panel-subtitle">Step 7: scrape + session + modes</p>
 
       <section className="panel-section">
         <h2 className="panel-heading">Scrape</h2>
@@ -206,49 +297,123 @@ export default function App() {
       </section>
 
       <section className="panel-section">
-        <h2 className="panel-heading">Backend</h2>
-        <p className="panel-hint">http://localhost:8000 — run uvicorn first.</p>
-        <button
-          type="button"
-          className="panel-button panel-button--secondary"
-          onClick={() => void handleCheckHealth()}
-          disabled={checkingHealth}
-        >
-          {checkingHealth ? "Checking…" : "Check health"}
-        </button>
-        {healthStatus && (
-          <p className="panel-status panel-status--ok">{healthStatus}</p>
-        )}
-        {healthError && (
-          <p className="panel-status panel-status--err panel-status--pre">
-            {healthError}
-          </p>
-        )}
+        <h2 className="panel-heading">Session</h2>
         <button
           type="button"
           className="panel-button"
-          onClick={() => void handleTestSession()}
-          disabled={testingSession}
+          onClick={() => void handleStartSession()}
+          disabled={!canStartSession}
         >
-          {testingSession ? "Calling /session…" : "Test POST /session"}
+          {startingSession ? "Starting session…" : "Start session"}
         </button>
-        <p className="panel-hint">
-          Uses scraped page if available; otherwise a 2-block test payload.
-        </p>
-        {sessionResult && (
-          <p className="panel-status panel-status--ok panel-status--pre">
-            {sessionResult}
-          </p>
+        {!extracted?.blocks.length && (
+          <p className="panel-hint">Scrape an article page to enable.</p>
         )}
         {sessionError && (
           <p className="panel-status panel-status--err panel-status--pre">
             {sessionError}
           </p>
         )}
+        {headerSummary && (
+          <div className="panel-session-result">
+            <p className="panel-summary">{headerSummary}</p>
+            {sessionId && (
+              <p className="panel-hint panel-session-id">
+                session_id: <code>{sessionId}</code>
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="panel-section">
+        <h2 className="panel-heading">Modes</h2>
+        {!sessionId && (
+          <p className="panel-hint">Start a session to enable modes.</p>
+        )}
+        <div className="panel-mode-buttons">
+          {MODE_BUTTONS.map(({ mode, label }) => {
+            const isLoading = loadingMode === mode;
+            const isActive = activeMode === mode && deck !== null;
+            return (
+              <button
+                key={mode}
+                type="button"
+                className={[
+                  "panel-button",
+                  "panel-button--mode",
+                  isActive ? "panel-button--active" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                disabled={!sessionId || loadingMode !== null}
+                onClick={() => void handleMode(mode)}
+                title={sessionId ? undefined : "Start a session first"}
+              >
+                {isLoading ? "Loading…" : label}
+              </button>
+            );
+          })}
+        </div>
+        {loadingMode && (
+          <p className="panel-hint">
+            Generating deck ({modeLabel(loadingMode)})…
+          </p>
+        )}
+        {modeError && (
+          <p className="panel-status panel-status--err panel-status--pre">
+            {modeError}
+          </p>
+        )}
+        {deck && activeMode && (
+          <DeckView deck={deck} mode={activeMode} />
+        )}
       </section>
 
       <details className="panel-details">
-        <summary className="panel-details-summary">Debug (steps 2–3)</summary>
+        <summary className="panel-details-summary">Debug</summary>
+
+        <section className="panel-section">
+          <h2 className="panel-heading">Backend</h2>
+          <p className="panel-hint">http://localhost:8000</p>
+          <button
+            type="button"
+            className="panel-button panel-button--secondary"
+            onClick={() => void handleCheckHealth()}
+            disabled={checkingHealth}
+          >
+            {checkingHealth ? "Checking…" : "Check health"}
+          </button>
+          {healthStatus && (
+            <p className="panel-status panel-status--ok">{healthStatus}</p>
+          )}
+          {healthError && (
+            <p className="panel-status panel-status--err panel-status--pre">
+              {healthError}
+            </p>
+          )}
+          <button
+            type="button"
+            className="panel-button panel-button--secondary"
+            onClick={() => void handleTestSession()}
+            disabled={testingSession}
+          >
+            {testingSession ? "Calling /session…" : "Test POST /session"}
+          </button>
+          <p className="panel-hint">
+            Dev only: uses scrape if available, else 2-block fallback.
+          </p>
+          {devSessionResult && (
+            <p className="panel-status panel-status--ok panel-status--pre">
+              {devSessionResult}
+            </p>
+          )}
+          {devSessionError && (
+            <p className="panel-status panel-status--err panel-status--pre">
+              {devSessionError}
+            </p>
+          )}
+        </section>
 
         <section className="panel-section">
           <button
